@@ -48,21 +48,27 @@ export async function callOpusReflection(
 
   // Construct request body
   // ⚠ NO temperature / top_p / top_k — Opus 4.7 rejects non-default values with 400
-  // ⚠ thinking uses adaptive type only (budget_tokens deprecated, returns 400)
-  // ⚠ 1h breakpoint MUST precede 5m breakpoint per Anthropic spec
-  // ⚠ SDK 0.40.x lags behind 2026-04-21 server spec — `adaptive` thinking, top-level
-  //   `effort`, and `ttl: "1h"` cache_control are accepted by the API but missing
-  //   from SDK types. Cast to `any` until @anthropic-ai/sdk catches up.
+  //
+  // BASELINE CALL (D1 — Anthropic spec verification deferred to D2)
+  // Initial implementation tried `effort` (top-level), `thinking: { type: "adaptive" }`,
+  // and `cache_control: { ttl: "1h" }` based on agent-mediated web research. The API
+  // rejected `effort` with 400 ("Extra inputs are not permitted"). Out of caution,
+  // also removed `thinking` (type "adaptive" unverified) and `cache_control.ttl`.
+  //
+  // D2 task: fetch official Anthropic docs directly (no agent intermediary), verify
+  // exact field shapes for extended thinking + 1h cache + reasoning effort, then
+  // re-add per verified spec. Tracked in hackathon/EXECUTION-PLAN.md.
+  //
+  // Current behavior: cache TTL defaults to 5m, no extended thinking, model uses
+  // default reasoning depth. Sufficient for first reflection baseline.
   const requestBody = {
     model: config.model,
     max_tokens: config.maxOutputTokens,
-    thinking: { type: "adaptive" },
-    effort: config.effort,
     system: [
       {
         type: "text",
         text: layers.systemL1,
-        cache_control: { type: "ephemeral", ttl: "1h" },
+        cache_control: { type: "ephemeral" },
       },
     ],
     messages: [
@@ -72,7 +78,7 @@ export async function callOpusReflection(
           {
             type: "text",
             text: layers.contextL2,
-            cache_control: { type: "ephemeral", ttl: "5m" },
+            cache_control: { type: "ephemeral" },
           },
           {
             type: "text",

@@ -9,6 +9,10 @@
 //   reflect log [--prune]          — read session-log.jsonl
 //   reflect off / on               — disable / enable for current session
 
+// Load .env from cwd before anything else (cross-platform: bash, PowerShell, cmd).
+// Shell-set env vars take precedence (dotenv default: override=false).
+import "dotenv/config";
+
 import { parseArgs } from "node:util";
 import { promises as fs } from "node:fs";
 import path from "node:path";

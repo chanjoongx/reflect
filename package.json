@@ -57,6 +57,7 @@
   ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
+    "dotenv": "^16.6.1",
     "stetkeep": "^0.4.6"
   },
   "devDependencies": {
@@ -67,6 +68,10 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx bin/reflect.ts",
+    "reflect": "tsx bin/reflect.ts",
+    "reflect:manual": "tsx bin/reflect.ts manual --debug",
+    "reflect:status": "tsx bin/reflect.ts status",
+    "reflect:log": "tsx bin/reflect.ts log",
     "test": "tsc --noEmit && node --test --import tsx 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "mirror-check": "diff -rq commands/ .claude/commands/ && diff -rq agents/ .claude/agents/ && diff -rq hooks/ .claude/hooks/ --exclude=hooks.json"

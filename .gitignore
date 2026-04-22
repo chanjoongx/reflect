@@ -35,7 +35,7 @@ SCRATCH.md
 
 # Dependencies
 node_modules/
-package-lock.json
+# NOTE: package-lock.json IS committed (CI uses `npm ci` for reproducibility)
 pnpm-lock.yaml
 yarn.lock
 

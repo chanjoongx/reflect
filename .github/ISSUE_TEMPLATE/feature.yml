@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a new feature or signal taxonomy extension.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting: check the [Roadmap](../../README.md#roadmap) section. v1.1 + v2 may already cover your idea.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's the user pain?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Phase
+      options:
+        - v1 (current — only blocking bugs accepted)
+        - v1.1 (deep-reflect mode, domain rule injection)
+        - v2 (Phase 2 — opt-in persistence)
+        - Future / unscoped
+    validations:
+      required: true

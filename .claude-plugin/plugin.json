@@ -1,0 +1,29 @@
+{
+  "name": "reflect",
+  "version": "0.1.0-alpha.1",
+  "description": "Session-local metacognition harness for long-running Claude Code work. When suggestions get reverted, Opus 4.7 reasons about why and injects guidance into the next turn.",
+  "author": {
+    "name": "Chanjoong Kim",
+    "email": "cj@chanjoongx.com",
+    "url": "https://github.com/chanjoongx"
+  },
+  "homepage": "https://github.com/chanjoongx/reflect",
+  "repository": "https://github.com/chanjoongx/reflect",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "metacognition",
+    "session-local",
+    "reflection",
+    "opus-4-7",
+    "long-running",
+    "harness",
+    "ai-agents"
+  ],
+  "commands": [
+    "./commands/brain-reflect.md"
+  ],
+  "agents": [
+    "./agents/reflection-orchestrator.md"
+  ]
+}

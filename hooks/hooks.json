@@ -1,0 +1,26 @@
+{
+  "_comment": "reflect plugin hook manifest. PostToolUse (observation) — distinct from stetkeep's PreToolUse (prevention).",
+
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "_platform": "bash (macOS/Linux/Git Bash)",
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/reflect-trigger.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+
+  "_notes": {
+    "windows": "On native Windows PowerShell (no Git Bash), replace command with: powershell -File ${CLAUDE_PLUGIN_ROOT}/hooks/reflect-trigger.ps1",
+    "env": "CLAUDE_PLUGIN_ROOT is injected by Claude Code and points to the plugin's installed directory.",
+    "trigger_logic": "Hook accumulates revert signals across recent tool calls. When threshold (sum >= 2.4 in last 10 calls) met, invokes bin/reflect.ts which calls Opus 4.7 and writes .reflect/session-guidance.md.",
+    "cost": "Most calls return immediately (signal below threshold). Trigger costs ~$0.04 warm / ~$0.09 cold per reflection."
+  }
+}

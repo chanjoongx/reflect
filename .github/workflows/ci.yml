@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run typecheck
+
+  mirror-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - name: commands/ matches .claude/commands/
+        run: diff -rq commands/ .claude/commands/
+      - name: agents/ matches .claude/agents/
+        run: diff -rq agents/ .claude/agents/
+      - name: hooks/ matches .claude/hooks/ (excluding plugin-only hooks.json)
+        run: diff -rq hooks/ .claude/hooks/ --exclude=hooks.json
+
+  hook-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - name: hook executes without error (no signal case)
+        run: |
+          echo '{"tool_name":"Read","tool_input":{"file_path":"foo.ts"},"session_id":"ci-test"}' | bash hooks/reflect-trigger.sh
+      - name: hook detects tier 1 signal
+        run: |
+          mkdir -p /tmp/ci-test/.reflect
+          REFLECT_DEBUG=1 CLAUDE_PROJECT_DIR=/tmp/ci-test echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"ci-test"}' | bash hooks/reflect-trigger.sh

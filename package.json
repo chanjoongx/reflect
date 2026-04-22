@@ -1,0 +1,74 @@
+{
+  "name": "reflect",
+  "version": "0.1.0-alpha.1",
+  "description": "Session-local metacognition harness for long-running Claude Code work. When suggestions get reverted, Opus 4.7 reasons about why and injects guidance into the next turn.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "reflect": "dist/bin/reflect.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "bin/",
+    "commands/",
+    "agents/",
+    "hooks/hooks.json",
+    "hooks/reflect-trigger.sh",
+    "hooks/reflect-trigger.ps1",
+    ".claude-plugin/",
+    "REFLECT.md",
+    "ARCHITECTURE.md",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Chanjoong Kim",
+    "email": "cj@chanjoongx.com",
+    "url": "https://github.com/chanjoongx"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chanjoongx/reflect.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chanjoongx/reflect/issues"
+  },
+  "homepage": "https://github.com/chanjoongx/reflect",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "claude",
+    "anthropic",
+    "opus-4-7",
+    "metacognition",
+    "session-local",
+    "reflection",
+    "ai-agents",
+    "ai-coding",
+    "harness",
+    "long-running",
+    "developer-tools"
+  ],
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0",
+    "stetkeep": "^0.4.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx bin/reflect.ts",
+    "test": "tsc --noEmit && node --test --import tsx 'src/**/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "mirror-check": "diff -rq commands/ .claude/commands/ && diff -rq agents/ .claude/agents/ && diff -rq hooks/ .claude/hooks/ --exclude=hooks.json"
+  }
+}

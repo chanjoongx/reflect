@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in reflect isn't working as documented.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For security vulnerabilities, do **not** use this form — see `SECURITY.md`.
+  - type: input
+    id: version
+    attributes:
+      label: reflect version
+      description: Output of `npx reflect --version`
+      placeholder: "0.1.0-alpha.1"
+    validations:
+      required: true
+  - type: input
+    id: claude-code-version
+    attributes:
+      label: Claude Code version
+      placeholder: "e.g. 2.3.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Linux
+        - Windows (PowerShell)
+        - Windows (Git Bash / WSL)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Include exact error messages and the output of `npx reflect status` if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+    validations:
+      required: true
+  - type: textarea
+    id: hook-output
+    attributes:
+      label: Hook output (if hook-related)
+      description: |
+        For PostToolUse hook bugs:
+        ```
+        echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"test"}' | bash .claude/hooks/reflect-trigger.sh
+        ```
+      render: shell
+  - type: textarea
+    id: state
+    attributes:
+      label: ".reflect/state.json contents"
+      description: Redact session_id if private.
+      render: json

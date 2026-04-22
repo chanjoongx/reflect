@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Copy to .claude/settings.json in your project root. reflect uses PostToolUse (observation), distinct from stetkeep's PreToolUse (prevention).",
+  "_platform_note": "The hook command below uses bash. macOS/Linux/Git Bash users: keep as-is. Windows native PowerShell users: change 'command' to 'powershell -File $CLAUDE_PROJECT_DIR/.claude/hooks/reflect-trigger.ps1'.",
+
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "_comment": "bash version (macOS/Linux/Git Bash). For Windows native PowerShell, replace with: powershell -File $CLAUDE_PROJECT_DIR/.claude/hooks/reflect-trigger.ps1",
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/reflect-trigger.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'reflect active. Triggers when revert signals cluster (≥3 in 10 tool calls). Manual: /brain-reflect.'",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  },
+
+  "_notes": {
+    "hook_choice": "PostToolUse instead of PreToolUse — reflect observes patterns; it does not block actions. Stetkeep occupies the PreToolUse slot for prevention.",
+    "timeout": "30s allows the Opus 4.7 API call to complete with adaptive thinking. Hook returns silently if the trigger threshold is not met (most calls).",
+    "subagents": "reflection-orchestrator is defined in .claude/agents/. Available via /brain-reflect for manual invocation.",
+    "rules": "reflect-rules in .claude/rules/ auto-loads on src/**, lib/**, app/** file access. It declares .reflect/session-guidance.md as a context source."
+  }
+}

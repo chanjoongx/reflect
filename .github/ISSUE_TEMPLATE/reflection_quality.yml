@@ -1,0 +1,54 @@
+name: Reflection quality issue
+description: A reflection was generic, wrong, or counterproductive. Help us improve the prompt.
+title: "[rq] "
+labels: ["reflection-quality"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reflection quality issues are the highest-leverage feedback for reflect. The more concrete the report, the faster the prompt improves.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of issue
+      options:
+        - Generic (no actionable adjustment)
+        - Wrong pattern identification
+        - Missed obvious signal
+        - False trigger (intent change misread as feedback)
+        - Hallucinated context not in prompt
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: trigger-context
+    attributes:
+      label: Trigger context (1-2 sentences)
+      description: What were you doing when the reflection fired?
+      placeholder: "Refactoring src/billing/kyc.ts. User reverted 3 times after I extracted a magic number."
+    validations:
+      required: true
+  - type: textarea
+    id: reflection-output
+    attributes:
+      label: Reflection output (verbatim)
+      description: Paste from `.reflect/session-guidance.md` or terminal log.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: expected-reflection
+    attributes:
+      label: What the reflection should have said
+      description: Hand-crafted "good" version. This becomes a calibration example.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: redacted-prompt
+    attributes:
+      label: Trigger payload (L3 layer, redacted)
+      description: |
+        From `.reflect/state.json` or trigger log. Redact PII.
+        Optional but very helpful — let us reproduce.
+      render: json

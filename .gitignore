@@ -1,0 +1,92 @@
+# ===================================================================
+# reflect — .gitignore
+# Layer 1 of PII / secret defense. Layer 2 = .git/hooks/pre-commit
+# (PII pattern scanner, cloned from stetkeep). Layer 3 = memory files
+# physically located outside this repo.
+#
+# IMPORTANT: git .gitignore syntax does NOT support inline comments.
+# All comments must be on their own line.
+# ===================================================================
+
+# Secrets — 절대 커밋 금지
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets.json
+.credentials/
+
+# API / runtime artifacts (session-guidance.md + session-log.jsonl, ephemeral)
+.reflect/
+
+# Internal docs (PII + 전략) — local only
+CLAUDE.md
+hackathon/
+
+# Legacy paths (이미 hackathon/ 으로 이동됨, 안전망)
+docs/HACKATHON.md
+docs/NEXT_SESSION.md
+
+# Scratch
+NOTES.md
+TODO.md
+SCRATCH.md
+
+# Dependencies
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Build / output
+dist/
+build/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Claude Code runtime state — user-local, NOT committed
+# (settings.example.json IS committed as template)
+.claude/settings.json
+.claude/settings.local.json
+.claude/local-settings.json
+.claude/todos/
+.claude/cache/
+.claude/history/
+.claude/*.log
+.claude/*.lock
+.claude/scheduled_tasks.lock
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Python (if any tooling added later)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Backups
+*.backup-*
+
+# reflect ablation outputs (committed selectively, raw runs ignored)
+experiments/runs/
+experiments/*.raw.json

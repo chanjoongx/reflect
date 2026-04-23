@@ -98,3 +98,10 @@ experiments/payloads/
 
 # Claude Code scheduled task state (user-local)
 .claude/scheduled_tasks.json
+
+# Claude Code conversation transcripts (safety net — normally at ~/.claude/projects/, but if repo-local .claude/projects/ created, contains PII: user prompts + Claude responses)
+.claude/projects/
+
+# npm artifacts (post-hackathon publish 가능성)
+*.tgz
+.npm/

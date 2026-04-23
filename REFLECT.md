@@ -123,7 +123,7 @@ Per-trigger fresh data.
 ```
 
 ### Total prompt budget
-- L1: 4,741 tokens (measured — ≥ 4,096 cache floor met; see `hackathon/DOGFOOD-LOG.md` Entry #003)
+- L1: 4,741 tokens (measured — ≥ 4,096 cache floor met; see [`docs/measurements.md`](docs/measurements.md))
 - L2: ~2,000 tokens (cache eligible)
 - L3: ~3,000 tokens (per call — realistic; cold-start smoke tests may be much smaller)
 - **Per-call cost** — theoretical cold $0.093 / warm $0.038 (full L3 load); measured D2 cold $0.049 / warm $0.009 (smaller L3 during dogfood)
@@ -368,13 +368,14 @@ Detailed math + scenario sweeps: `docs/api-cost-economics.md`.
 
 <dogfood_protocol>
 
-## Self-dogfooding (Thariq Lab requirement)
+## Self-dogfooding
 
-reflect must run on its own development sessions starting D2. Every triggered
-reflection logs to `hackathon/DOGFOOD-LOG.md` with:
+reflect is designed to be used during its own development. Triggered reflections from real maintainer sessions inform prompt + taxonomy tuning more reliably than synthesized examples.
+
+Maintainers keep a local log of each triggered reflection with:
 
 ```
-[YYYY-MM-DD HH:MM PT]
+[YYYY-MM-DD HH:MM TZ]
 Context: <one line — what was I doing?>
 Trigger: <which signals, weights summed>
 Reflection (summary): <pattern + adjustment compressed>
@@ -382,14 +383,10 @@ Did it actually change next move? Y / N
 Why: <one line>
 ```
 
-### Acceptance gate (D5 demo recording readiness)
-- ≥ 12 entries
-- Y/N ratio publicly disclosed (no inflation — Y rate of 30-50% is honest;
-  Thariq's "90% experiments fail" frame applies)
-
-### Demo use
-The most impactful real-session reflection (high confidence, clear behavioral
-change) becomes the demo's middle section. NOT a synthesized example.
+### Honest reporting
+- Y-rate of 30–50 % is considered honest
+- > 90 % claims should be suspect — causal reasoning across 20+ tool calls is hard; null results are informative
+- Aggregate summaries publish at [`docs/measurements.md`](docs/measurements.md)
 
 </dogfood_protocol>
 
@@ -397,7 +394,7 @@ change) becomes the demo's middle section. NOT a synthesized example.
 
 <ablation_experiments>
 
-## What we measure (Thariq Lab requirement)
+## What we measure
 
 ### Ablation 1 — With vs Without reflect
 - 2 sessions × 2 hours each, same task type (refactor a known-noisy module)
@@ -424,7 +421,7 @@ is a finding worth shipping.
 
 <failure_modes>
 
-## What reflect does NOT fix (Cat Lab requirement)
+## What reflect does NOT fix
 
 ### Failure 1 — Cold-start sessions
 First 5 turns of a new session have insufficient context for causal reasoning.
@@ -440,7 +437,7 @@ Tax calculation, KYC, GDPR-bound code: domain reasoning may be opaque to a
 generic LLM reflector. Output may be vague ("be careful with regulations").
 README documents this. Mitigation: user-supplied domain rule injection (v1.1).
 
-Documented in detail: `hackathon/FAILURE-MODES.md`.
+Documented in detail: [`docs/measurements.md`](docs/measurements.md#failure-modes).
 
 </failure_modes>
 

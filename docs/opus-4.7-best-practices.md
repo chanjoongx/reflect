@@ -1,6 +1,6 @@
 # Opus 4.7 Best Practices (2026-04 corrections)
 
-> Critical changes to the Opus 4.7 API surface that affect reflect's implementation. Sourced from official Anthropic docs, 2026-04-21. See [`hackathon/RESEARCH-FINDINGS-2026-04-21.md`](../hackathon/RESEARCH-FINDINGS-2026-04-21.md) for full source list.
+> Critical changes to the Opus 4.7 API surface that affect reflect's implementation. Sourced from official Anthropic docs (2026-04-21) + live API verification during reflect's D2 build. Measured evidence summary: [`measurements.md`](measurements.md).
 
 ---
 
@@ -33,7 +33,7 @@ Values:
 - `xhigh` — Anthropic's recommended starting point for coding/agentic
 - `max` — CLI/skill-only, not Messages API
 
-⚠ `effort` is **nested inside `output_config`**, NOT top-level. Both top-level `effort` and `thinking.effort` return `400 Extra inputs are not permitted` on Opus 4.7. The Extended-Thinking doc page shows `thinking.effort` — the Messages API reference wins (see finding F3 in `hackathon/DOGFOOD-LOG.md`).
+⚠ `effort` is **nested inside `output_config`**, NOT top-level. Both top-level `effort` and `thinking.effort` return `400 Extra inputs are not permitted` on Opus 4.7. The Extended-Thinking doc page shows `thinking.effort` — the Messages API reference wins (field-shape verification table: [`measurements.md`](measurements.md#field-shape-verification)).
 
 reflect uses `high` by default. Test `xhigh` for your use case if you want richer reflections at ~30% cost increase.
 
@@ -221,4 +221,4 @@ reflect's `calculateCost()` in `src/opus-reflection.ts` computes `totalUSD` from
 - [Building with extended thinking](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)
 - [Claude Opus 4.7 GA — GitHub Changelog](https://github.blog/changelog/2026-04-16-claude-opus-4-7-is-generally-available/)
 
-For full research findings + verified-as-of-2026-04-21 source links, see [`hackathon/RESEARCH-FINDINGS-2026-04-21.md`](../hackathon/RESEARCH-FINDINGS-2026-04-21.md).
+For live-verified field shapes + rejected shapes (400 errors), see [`measurements.md`](measurements.md#field-shape-verification).

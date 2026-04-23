@@ -34,7 +34,7 @@ All prices are 2026-04-21 Opus 4.7 standard rate (per 1M tokens):
 | Output | 800 | $25/M | $0.020 |
 | **Theoretical total** | | | **$0.095** |
 
-**Measured D2** (`hackathon/DOGFOOD-LOG.md` Entry #003): **$0.049 cold** (smaller L3 during smoke tests; output 800 tok accurate).
+**Measured D2** (see [`measurements.md`](measurements.md)): **$0.049 cold** (smaller L3 during smoke tests; output 800 tok accurate).
 
 ---
 

@@ -23,7 +23,7 @@ Reason: the model's task here is to OUTPUT JSON. XML in the prompt would compete
 
 ## L1 layer composition (4,741 tokens measured, cached 1h)
 
-The L1 stable layer is the largest and the only one that absolutely must meet Opus 4.7's 4,096-token cache floor. Composition (approximate — measured total is 4,741 per `hackathon/DOGFOOD-LOG.md` Entry #003):
+The L1 stable layer is the largest and the only one that absolutely must meet Opus 4.7's 4,096-token cache floor. Composition (approximate — measured total is 4,741 per [`measurements.md`](measurements.md)):
 
 | Section | ~Tokens | Purpose |
 |---|---|---|
@@ -79,7 +79,7 @@ The three included examples cover:
 2. **Intent change masquerading as revert** (high false_trigger_likelihood)
 3. **Regulatory domain** (literal value matters, generalization is harm)
 
-These were chosen to span the failure modes documented in `hackathon/FAILURE-MODES.md`.
+These were chosen to span the failure modes documented in [`measurements.md`](measurements.md#failure-modes).
 
 ---
 

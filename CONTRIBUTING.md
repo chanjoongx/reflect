@@ -21,7 +21,7 @@ We currently detect 3 tiers (hard / inferred / soft). If you observe a recurring
 ### 3. Failure mode reports
 If you find a session where reflect produces a bad reflection AND the badness was predictable (cold-start, intent change, regulatory domain), report it.
 
-We document failure modes in `hackathon/FAILURE-MODES.md` (and the public `README.md`'s "Honest gotchas" section).
+We document failure modes in [`docs/measurements.md`](docs/measurements.md#failure-modes) (and the public `README.md`'s "Honest gotchas" section).
 
 ### 4. Language ports
 The harness layer is model-agnostic. Python / Rust / Go ports of `bin/reflect.ts` + `src/*` are welcome. Constraints:

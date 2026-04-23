@@ -82,7 +82,7 @@ Disable per-session: `export REFLECT_DISABLED=1` (or in `.env`). Full walkthroug
 
 3-minute walkthrough of reflect catching real drift in a real refactor session — recorded during the hackathon, no synthetic data.
 
-[▶ Watch the demo](https://youtu.be/PLACEHOLDER-D5) · [Demo script](hackathon/DEMO-SCRIPT.md)
+[▶ Watch the demo](https://youtu.be/PLACEHOLDER-D5)
 
 The recording shows: a two-hour refactor session, three clustered reverts, the trigger firing, Opus 4.7's reflection panel, and the next turn visibly adjusting. Cost, cache hit rate, and reflection-useful-rate overlaid as text.
 
@@ -98,7 +98,7 @@ reflect is **not** a fix-all. Documented failure modes:
 - **Regulatory / domain-opaque code** — tax / KYC / GDPR may produce vague reflections. Mitigation in v1.1 (user-supplied domain rule injection).
 - **Cost on large prompts** — cold call ≈ $0.05 (4,741-token L1 cached 1 h). Subsequent warm calls ≈ $0.01. See [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
 
-Full breakdown during the hackathon: [`hackathon/FAILURE-MODES.md`](hackathon/FAILURE-MODES.md) (public after submission).
+Full mechanism detail: [`docs/measurements.md`](docs/measurements.md#failure-modes).
 
 </details>
 

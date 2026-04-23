@@ -84,11 +84,17 @@ __pycache__/
 .venv/
 venv/
 
-# Backups
+# Backups + merge artifacts
 *.backup-*
+*.orig
+*.rej
 
 # reflect ablation outputs (committed selectively, raw runs ignored)
 experiments/runs/
 experiments/*.raw.json
-# Ablation task prompts are internal methodology — results (ablation-with-without.md, ablation-components.md) are public
+# Internal methodology: task prompts + payloads (results in ablation-with-without.md, ablation-components.md are public)
 experiments/ablation-*-task-prompt.md
+experiments/payloads/
+
+# Claude Code scheduled task state (user-local)
+.claude/scheduled_tasks.json

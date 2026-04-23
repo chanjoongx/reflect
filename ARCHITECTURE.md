@@ -185,7 +185,7 @@ Our layer plan:
 - Cold (first call, L1=4,741 tok): ≈ $0.049 (≈ $0.093 theoretical without caching)
 - Warm (subsequent, L1 cache hit ≈ 95%): ≈ $0.009 (≈ $0.038 average, L1 1h + L2 5m)
 
-Measured figures from `hackathon/DOGFOOD-LOG.md` Entries #001–#004. Theoretical figures in [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
+Measured figures summarised in [`docs/measurements.md`](docs/measurements.md). Theoretical figures in [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
 
 Math: [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
 

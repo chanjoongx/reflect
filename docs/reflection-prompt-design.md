@@ -132,4 +132,4 @@ If you find missed clusters: lower to 2.0
 
 ---
 
-**Last updated**: 2026-04-24 D4 (D2 verified API spec, D4 ablation 1 frozen to `experiments/ablation-1-task-prompt.md`)
+**Last updated**: 2026-04-24 D4 late AM post-second-push (D2 verified API spec, D4 morning ablation 1 Alt #1 swap frozen to `experiments/ablation-1-task-prompt.md` [gitignored, internal methodology], D4 catch-up Reproducibility 섹션 fill: base SHA `01ed845`, claude `2.1.118`, coin flip seed 21483 odd → Run 1=Cond B / Run 2=Cond A. 본문 prompt design rationale 그대로 valid.)

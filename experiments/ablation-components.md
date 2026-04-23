@@ -98,4 +98,4 @@ Negative findings are equally publishable.
 
 ---
 
-**Status**: Plan documented D1. Run D4-D5. Results published D5 noon.
+**Status (D4 late AM)**: Plan documented D1. **Run deferred to D5 morning** (D4 catch-up: DOGFOOD entries 4 real / target 5 — payload 5개 freeze 위해 1개 부족, 자연 +2-4 entries D4 afternoon ablation Run 2 또는 DOGFOOD bulk session 후 D5 morning execute 가능). Path A (ablation 진행) 시 Run 2 의 자연 entries 후 D5 morning, Path 4 (skip) 시 v1.1 deferred. Results: TBD.

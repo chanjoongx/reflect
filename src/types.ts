@@ -32,17 +32,20 @@ export interface RevertSignal {
 }
 
 /**
- * Tool call event from PostToolUse hook input.
+ * Tool call event. Fully populated when arriving directly from a PostToolUse
+ * hook payload; partially populated when reconstructed from .reflect/recent-calls.jsonl
+ * (hook logs only tool_name + a short input summary to keep state small).
  */
 export interface ToolCallEvent {
-  session_id: string;
-  hook_event_name: "PostToolUse";
   tool_name: string;
   tool_input: Record<string, unknown>;
-  tool_response: Record<string, unknown> | undefined;
-  tool_use_id: string;
-  cwd: string;
+  tool_response?: Record<string, unknown>;
+  session_id?: string;
+  hook_event_name?: "PostToolUse";
+  tool_use_id?: string;
+  cwd?: string;
   permission_mode?: string;
+  turn?: number;
 }
 
 /**

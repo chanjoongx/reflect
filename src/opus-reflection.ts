@@ -47,28 +47,37 @@ export async function callOpusReflection(
   const startTime = Date.now();
 
   // Construct request body
-  // ⚠ NO temperature / top_p / top_k — Opus 4.7 rejects non-default values with 400
   //
-  // BASELINE CALL (D1 — Anthropic spec verification deferred to D2)
-  // Initial implementation tried `effort` (top-level), `thinking: { type: "adaptive" }`,
-  // and `cache_control: { ttl: "1h" }` based on agent-mediated web research. The API
-  // rejected `effort` with 400 ("Extra inputs are not permitted"). Out of caution,
-  // also removed `thinking` (type "adaptive" unverified) and `cache_control.ttl`.
+  // D2 Increment 1 — verified against platform.claude.com docs directly (2026-04-22/23):
+  //   - thinking: { type: "adaptive", display: "summarized" }
+  //       • adaptive is the only valid type on Opus 4.7 (type "enabled" returns 400)
+  //       • display defaults to "omitted" on Opus 4.7 — must set "summarized" to
+  //         surface thinking content in the response
+  //   - system L1 cache_control ttl: "1h"
+  //       • extended thinking sessions routinely exceed 5m default; 1h amortizes
+  //       • 1h breakpoint must come before any 5m breakpoint in the same request
+  //       • cache floor for Opus 4.7 = 4096 tokens (L1 padding verified separately)
   //
-  // D2 task: fetch official Anthropic docs directly (no agent intermediary), verify
-  // exact field shapes for extended thinking + 1h cache + reasoning effort, then
-  // re-add per verified spec. Tracked in hackathon/EXECUTION-PLAN.md.
-  //
-  // Current behavior: cache TTL defaults to 5m, no extended thinking, model uses
-  // default reasoning depth. Sufficient for first reflection baseline.
+  // Not yet added (Increment 2):
+  //   - effort: location conflict between extended-thinking (thinking.effort) and
+  //     messages API (output_config.effort) docs. Must live-test to confirm.
+  //   - L1 padding to ≥ 4096 tokens: current SYSTEM_PROMPT_L1 + L1_PADDING_EXAMPLES
+  //     measures ~2736 tokens → silent cache miss until padded.
   const requestBody = {
     model: config.model,
     max_tokens: config.maxOutputTokens,
+    thinking: {
+      type: "adaptive" as const,
+      display: "summarized" as const,
+    },
+    output_config: {
+      effort: "high" as const,
+    },
     system: [
       {
         type: "text",
         text: layers.systemL1,
-        cache_control: { type: "ephemeral" },
+        cache_control: { type: "ephemeral", ttl: "1h" },
       },
     ],
     messages: [
@@ -178,17 +187,23 @@ interface UsageShape {
   output_tokens: number;
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
-  // Future: separate 5m vs 1h cache write counts
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  } | null;
 }
 
 export function calculateCost(usage: UsageShape): CallCost {
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const cacheWriteTotal = usage.cache_creation_input_tokens ?? 0;
 
-  // Without breakdown, assume ~70% of cache write was 1h L1, 30% was 5m L2
-  // (Reflects our L1=4500 / L2=2000 ratio)
-  const cacheWrite1h = Math.round(cacheWriteTotal * 0.7);
-  const cacheWrite5m = cacheWriteTotal - cacheWrite1h;
+  // Prefer exact 5m vs 1h split from usage.cache_creation (API returns this as of
+  // 2026-04). Fall back to 0.7/0.3 heuristic (reflecting L1=~4700 1h / L2=~2000 5m)
+  // if the field is missing — older SDK versions do not surface it.
+  const cacheWrite1h =
+    usage.cache_creation?.ephemeral_1h_input_tokens ?? Math.round(cacheWriteTotal * 0.7);
+  const cacheWrite5m =
+    usage.cache_creation?.ephemeral_5m_input_tokens ?? cacheWriteTotal - cacheWrite1h;
 
   const inputCost = (usage.input_tokens / 1_000_000) * PRICE_INPUT_PER_MTOK;
   const outputCost = (usage.output_tokens / 1_000_000) * PRICE_OUTPUT_PER_MTOK;

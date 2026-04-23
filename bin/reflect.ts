@@ -19,7 +19,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 
-import { assemblePrompt } from "../src/context-assembler.js";
+import {
+  assemblePrompt,
+  getActiveRules,
+  getRecentToolCalls,
+  getRolledBackDiff,
+  summarizeTask,
+} from "../src/context-assembler.js";
 import { callOpusReflection } from "../src/opus-reflection.js";
 import { writeGuidance, readGuidance } from "../src/guidance-injector.js";
 import { appendLog, pruneOldEntries, computeUsefulRate } from "../src/logger.js";
@@ -105,16 +111,28 @@ async function cmdManual(projectDir: string, scope: TriggerScope): Promise<void>
 
   console.error(`[reflect] manual trigger — scope: ${scope}`);
 
-  // TODO (D2-D3): assemble real context from session transcript
-  // For now, placeholder demonstrating the call shape
+  const [activeRules, sessionTaskSummary, recentToolCalls, rolledBackDiff] =
+    await Promise.all([
+      getActiveRules(projectDir),
+      summarizeTask(projectDir),
+      getRecentToolCalls(projectDir, 20),
+      getRolledBackDiff(projectDir),
+    ]);
+
+  if (config.debug) {
+    console.error(
+      `[reflect] context: rules=${activeRules.length}b task=${sessionTaskSummary.length}b calls=${recentToolCalls.length} diff=${rolledBackDiff.length}b`,
+    );
+  }
+
   const layers = assemblePrompt(
     {
-      activeRules: "(stub — read .claude/rules/*.md)",
-      sessionTaskSummary: "(stub — extract from transcript)",
+      activeRules,
+      sessionTaskSummary,
     },
     {
-      recentToolCalls: [], // stub
-      rolledBackDiff: "", // stub
+      recentToolCalls,
+      rolledBackDiff,
       triggerMeta: {
         signals: [{ tier: 1, weight: 1.0, source: "manual:bypass" }],
         sumWeight: 1.0,

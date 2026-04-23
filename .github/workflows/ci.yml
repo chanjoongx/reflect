@@ -34,7 +34,33 @@ jobs:
       - name: hook executes without error (no signal case)
         run: |
           echo '{"tool_name":"Read","tool_input":{"file_path":"foo.ts"},"session_id":"ci-test"}' | bash hooks/reflect-trigger.sh
-      - name: hook detects tier 1 signal
+      - name: hook detects tier 1 signal (fires trigger, writes state)
         run: |
-          mkdir -p /tmp/ci-test/.reflect
-          REFLECT_DEBUG=1 CLAUDE_PROJECT_DIR=/tmp/ci-test echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"ci-test"}' | bash hooks/reflect-trigger.sh
+          # Fire three Tier 1 signals (git restore = +100 each) to cross the
+          # default cum_x100 threshold of 240. After fire, cum resets to 0 and
+          # cooldown_remaining is set to 5.
+          #
+          # NOTE: `env VAR=x bash ...` (with pipe input) is correct. A prefix
+          # like `VAR=x echo ... | bash ...` would apply VAR to echo, not bash.
+          for i in 1 2 3; do
+            echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"ci-test"}' | \
+              env REFLECT_DEBUG=1 CLAUDE_PROJECT_DIR=/tmp/ci-test bash hooks/reflect-trigger.sh
+          done
+          echo "--- final state.json ---"
+          cat /tmp/ci-test/.reflect/state.json
+          grep -q '"cooldown_remaining":5' /tmp/ci-test/.reflect/state.json || {
+            echo "FAIL: trigger did not fire (expected cooldown_remaining=5)"
+            exit 1
+          }
+
+      - name: utterance hook detects tier 3 signal (no fire at single signal)
+        run: |
+          rm -rf /tmp/ci-utter-test
+          echo '{"prompt":"no wait, undo that","session_id":"ci-utter-test"}' | \
+            env REFLECT_DEBUG=1 CLAUDE_PROJECT_DIR=/tmp/ci-utter-test bash hooks/reflect-utterance.sh
+          echo "--- utterance state.json ---"
+          cat /tmp/ci-utter-test/.reflect/state.json
+          grep -q '"cum_x100":50' /tmp/ci-utter-test/.reflect/state.json || {
+            echo "FAIL: Tier 3 utterance not counted (expected cum_x100=50)"
+            exit 1
+          }

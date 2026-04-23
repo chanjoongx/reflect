@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# reflect — PostToolUse hook
-#
-# Observes tool calls, detects revert signal clusters, invokes
-# bin/reflect.ts when threshold met.
+# reflect — PostToolUse hook (cross-platform bash, no jq/bc required)
 #
 # Installed via .claude/settings.json:
 #   {
@@ -15,12 +12,12 @@
 #   }
 #
 # Behavior:
-#   - Always exits 0 (never blocks tool execution)
-#   - Increments signal count in .reflect/state.json
-#   - When sum of weighted signals in last 10 tool calls >= 2.4, invokes bin/reflect.ts
-#   - Cooldown: 5 turns post-trigger
+#   - Exits 0 always (never blocks tool execution)
+#   - Tracks cumulative signal weight × 100 (integer arithmetic, no bc needed)
+#   - Appends each tool call to .reflect/recent-calls.jsonl (trimmed to last 20)
+#   - Invokes bin/reflect.ts trigger when cumulative weight ≥ threshold (default 240 = 2.4)
 #
-# Dependencies: bash 4+. jq optional (falls back to grep parsing).
+# Dependencies: bash 4+. jq optional (fast path for parsing input).
 # Disable: export REFLECT_DISABLED=1
 
 set -u
@@ -34,118 +31,141 @@ fi
 INPUT=$(cat)
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$PROJECT_DIR}"
-THRESHOLD="${REFLECT_TRIGGER_THRESHOLD:-2.4}"
+# Integer thresholds (× 100) — avoids bc dependency
+# Default 240 = 2.4 weighted signals. Env override in integer × 100 form.
+THRESHOLD_X100="${REFLECT_TRIGGER_THRESHOLD_X100:-240}"
 COOLDOWN="${REFLECT_COOLDOWN_TURNS:-5}"
-WINDOW="${REFLECT_WINDOW_SIZE:-10}"
+MAX_CALLS="${REFLECT_MAX_RECENT_CALLS:-20}"
 STATE_DIR="$PROJECT_DIR/.reflect"
 STATE_FILE="$STATE_DIR/state.json"
+CALLS_FILE="$STATE_DIR/recent-calls.jsonl"
 
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
-# ─── JSON parsing ────────────────────────────────────────────────────
+# ─── Extract fields from hook input ──────────────────────────────────
 HAS_JQ=false
 command -v jq >/dev/null 2>&1 && HAS_JQ=true
 
-extract() {
-    if [ "$HAS_JQ" = true ]; then
-        echo "$INPUT" | jq -r "$1 // empty" 2>/dev/null
-    else
-        local field=$(echo "$1" | sed 's|^\.||' | sed 's|\.| |g' | awk '{print $NF}')
-        echo "$INPUT" | grep -oE "\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | \
-            sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/'
-    fi
-}
-
-# ─── Parse hook input ────────────────────────────────────────────────
-TOOL_NAME=$(extract ".tool_name")
-SESSION_ID=$(extract ".session_id")
-BASH_CMD=$(extract ".tool_input.command")
-FILE_PATH=$(extract ".tool_input.file_path")
-[ -z "$FILE_PATH" ] && FILE_PATH=$(extract ".tool_input.path")
-
-# ─── Initialize state ─────────────────────────────────────────────────
-if [ ! -f "$STATE_FILE" ]; then
-    echo '{"session_id":"","signals":[],"cooldown_remaining":0,"turn_count":0}' > "$STATE_FILE"
-fi
-
-# Read current state
 if [ "$HAS_JQ" = true ]; then
-    CURRENT_SESSION=$(jq -r '.session_id' "$STATE_FILE")
-    COOLDOWN_REMAINING=$(jq -r '.cooldown_remaining' "$STATE_FILE")
-    TURN_COUNT=$(jq -r '.turn_count' "$STATE_FILE")
+    TOOL_NAME=$(jq -r '.tool_name // empty' <<<"$INPUT" 2>/dev/null)
+    SESSION_ID=$(jq -r '.session_id // empty' <<<"$INPUT" 2>/dev/null)
+    BASH_CMD=$(jq -r '.tool_input.command // empty' <<<"$INPUT" 2>/dev/null)
+    FILE_PATH=$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<<"$INPUT" 2>/dev/null)
 else
-    CURRENT_SESSION=$(grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
-    COOLDOWN_REMAINING=$(grep -oE '"cooldown_remaining"[[:space:]]*:[[:space:]]*[0-9]+' "$STATE_FILE" | grep -oE '[0-9]+$' || echo "0")
-    TURN_COUNT=$(grep -oE '"turn_count"[[:space:]]*:[[:space:]]*[0-9]+' "$STATE_FILE" | grep -oE '[0-9]+$' || echo "0")
+    # Pure bash/grep fallback. Good enough for our top-level fields.
+    TOOL_NAME=$(echo "$INPUT" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
+    SESSION_ID=$(echo "$INPUT" | grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
+    BASH_CMD=$(echo "$INPUT" | grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')
+    FILE_PATH=$(echo "$INPUT" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"file_path"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')
+    [ -z "$FILE_PATH" ] && FILE_PATH=$(echo "$INPUT" | grep -oE '"path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"path"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')
 fi
 
-# Reset state on new session
+TOOL_NAME="${TOOL_NAME:-unknown}"
+SESSION_ID="${SESSION_ID:-none}"
+BASH_CMD="${BASH_CMD:-}"
+FILE_PATH="${FILE_PATH:-}"
+
+# ─── Read current state (grep/sed — jq-free path) ────────────────────
+CURRENT_SESSION=""
+CUM_X100=0
+TURN=0
+COOLDOWN_REMAINING=0
+
+if [ -f "$STATE_FILE" ]; then
+    CURRENT_SESSION=$(grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
+    V=$(grep -oE '"cum_x100"[[:space:]]*:[[:space:]]*[0-9]+' "$STATE_FILE" | grep -oE '[0-9]+$')
+    [ -n "$V" ] && CUM_X100=$V
+    V=$(grep -oE '"turn_count"[[:space:]]*:[[:space:]]*[0-9]+' "$STATE_FILE" | grep -oE '[0-9]+$')
+    [ -n "$V" ] && TURN=$V
+    V=$(grep -oE '"cooldown_remaining"[[:space:]]*:[[:space:]]*[0-9]+' "$STATE_FILE" | grep -oE '[0-9]+$')
+    [ -n "$V" ] && COOLDOWN_REMAINING=$V
+fi
+
+# New session → reset state and recent-calls log
 if [ "$CURRENT_SESSION" != "$SESSION_ID" ]; then
-    echo "{\"session_id\":\"$SESSION_ID\",\"signals\":[],\"cooldown_remaining\":0,\"turn_count\":0}" > "$STATE_FILE"
+    CUM_X100=0
+    TURN=0
     COOLDOWN_REMAINING=0
-    TURN_COUNT=0
+    : > "$CALLS_FILE" 2>/dev/null || true
 fi
 
-# Increment turn count
-TURN_COUNT=$((TURN_COUNT + 1))
+TURN=$((TURN + 1))
+[ "$COOLDOWN_REMAINING" -gt 0 ] && COOLDOWN_REMAINING=$((COOLDOWN_REMAINING - 1))
 
-# Decrement cooldown
-if [ "$COOLDOWN_REMAINING" -gt 0 ]; then
-    COOLDOWN_REMAINING=$((COOLDOWN_REMAINING - 1))
-fi
+# ─── Detect revert signals (Tier 1 + Tier 2 — utterance Tier 3 is UserPromptSubmit) ───
+SIGNAL_X100=0
+SIGNAL_TIER=0
 
-# ─── Detect revert signals ────────────────────────────────────────────
-SIGNAL_WEIGHT=0
-
-# Tier 1 (hard): git revert / git restore / explicit /undo
 if [ "$TOOL_NAME" = "Bash" ] && [ -n "$BASH_CMD" ]; then
     if echo "$BASH_CMD" | grep -qE "^(git revert|git restore|git checkout HEAD --)"; then
-        SIGNAL_WEIGHT="1.0"
-    fi
-fi
-
-# Tier 2 (inferred): file delete after recent write — rough heuristic
-# (More sophisticated semantic-inversion detection is in src/revert-detector.ts)
-if [ "$TOOL_NAME" = "Bash" ] && [ -n "$BASH_CMD" ]; then
-    if echo "$BASH_CMD" | grep -qE "^(rm |unlink )"; then
-        SIGNAL_WEIGHT="0.7"
-    fi
-fi
-
-# Tier 3 is detected from user_message events (different hook), not Bash/Edit/Write
-# This shell hook handles tier 1 & 2 only
-
-# ─── If no signal, just update turn count ────────────────────────────
-if [ "$SIGNAL_WEIGHT" = "0" ]; then
-    if [ "$HAS_JQ" = true ]; then
-        jq ".turn_count = $TURN_COUNT | .cooldown_remaining = $COOLDOWN_REMAINING" "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
-    fi
-    exit 0
-fi
-
-# ─── Record signal ───────────────────────────────────────────────────
-if [ "$HAS_JQ" = true ]; then
-    jq ".signals += [{\"weight\":$SIGNAL_WEIGHT,\"turn\":$TURN_COUNT}] | .signals = (.signals | map(select(.turn > $TURN_COUNT - $WINDOW))) | .turn_count = $TURN_COUNT | .cooldown_remaining = $COOLDOWN_REMAINING" "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
-
-    # Check threshold
-    SUM=$(jq '.signals | map(.weight) | add // 0' "$STATE_FILE")
-    [ "${REFLECT_DEBUG:-0}" = "1" ] && echo "[reflect] turn=$TURN_COUNT signal_weight=$SIGNAL_WEIGHT sum=$SUM cooldown=$COOLDOWN_REMAINING" >&2
-
-    # Trigger if threshold met AND not in cooldown
-    if (( $(echo "$SUM >= $THRESHOLD" | bc -l 2>/dev/null || echo 0) )) && [ "$COOLDOWN_REMAINING" = "0" ]; then
-        [ "${REFLECT_DEBUG:-0}" = "1" ] && echo "[reflect] threshold met — invoking reflect-core" >&2
-
-        # Reset cooldown
-        jq ".cooldown_remaining = $COOLDOWN | .signals = []" "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
-
-        # Invoke reflect-core (background to not block hook)
-        if [ -f "$PROJECT_DIR/bin/reflect.ts" ]; then
-            (cd "$PROJECT_DIR" && nohup npx tsx bin/reflect.ts trigger --session "$SESSION_ID" >> "$STATE_DIR/trigger.log" 2>&1 &)
-        elif [ -f "$PLUGIN_ROOT/bin/reflect.ts" ]; then
-            (cd "$PLUGIN_ROOT" && nohup npx tsx bin/reflect.ts trigger --session "$SESSION_ID" >> "$STATE_DIR/trigger.log" 2>&1 &)
+        SIGNAL_X100=100
+        SIGNAL_TIER=1
+    elif echo "$BASH_CMD" | grep -qE "^(rm |unlink )"; then
+        # Avoid flagging common build-artifact cleanup as revert
+        if ! echo "$BASH_CMD" | grep -qE "(node_modules|dist|build|\.next|coverage)"; then
+            SIGNAL_X100=70
+            SIGNAL_TIER=2
         fi
     fi
 fi
 
-# ─── Always exit 0 — never block tool execution ─────────────────────
+# ─── Append to recent-calls.jsonl (pure bash, no jq) ─────────────────
+# Summary is truncated + JSON-escaped for safety.
+if [ "$TOOL_NAME" = "Bash" ]; then
+    SUMMARY="${BASH_CMD:0:150}"
+elif [ -n "$FILE_PATH" ]; then
+    SUMMARY="$FILE_PATH"
+else
+    SUMMARY=""
+fi
+# Escape backslash then double-quote; strip newlines
+SUMMARY_ESC=$(printf '%s' "$SUMMARY" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r\t')
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
+
+printf '{"turn":%d,"tool":"%s","tier":%d,"input_summary":"%s","timestamp":"%s"}\n' \
+    "$TURN" "$TOOL_NAME" "$SIGNAL_TIER" "$SUMMARY_ESC" "$TIMESTAMP" \
+    >> "$CALLS_FILE"
+
+# Trim to last MAX_CALLS lines
+if [ -f "$CALLS_FILE" ]; then
+    tail -n "$MAX_CALLS" "$CALLS_FILE" > "$CALLS_FILE.tmp" 2>/dev/null && mv "$CALLS_FILE.tmp" "$CALLS_FILE"
+fi
+
+# ─── Accumulate signal + write state ─────────────────────────────────
+if [ "$SIGNAL_X100" -gt 0 ]; then
+    CUM_X100=$((CUM_X100 + SIGNAL_X100))
+fi
+
+write_state() {
+    cat > "$STATE_FILE" <<EOF
+{"session_id":"$SESSION_ID","turn_count":$TURN,"cum_x100":$CUM_X100,"cooldown_remaining":$COOLDOWN_REMAINING}
+EOF
+}
+
+# ─── Threshold check + fire trigger ──────────────────────────────────
+if [ "$CUM_X100" -ge "$THRESHOLD_X100" ] && [ "$COOLDOWN_REMAINING" = "0" ]; then
+    [ "${REFLECT_DEBUG:-0}" = "1" ] && \
+        echo "[reflect] threshold met ($CUM_X100 >= $THRESHOLD_X100) — invoking reflect-core" >&2
+
+    # Reset cumulative + start cooldown BEFORE firing (idempotency)
+    COOLDOWN_REMAINING="$COOLDOWN"
+    CUM_X100=0
+    write_state
+
+    # Invoke bin/reflect.ts trigger (background so hook returns fast)
+    TARGET_DIR=""
+    if [ -f "$PROJECT_DIR/bin/reflect.ts" ]; then
+        TARGET_DIR="$PROJECT_DIR"
+    elif [ -f "$PLUGIN_ROOT/bin/reflect.ts" ]; then
+        TARGET_DIR="$PLUGIN_ROOT"
+    fi
+    if [ -n "$TARGET_DIR" ]; then
+        (cd "$TARGET_DIR" && nohup npx tsx bin/reflect.ts trigger --session "$SESSION_ID" \
+            >> "$STATE_DIR/trigger.log" 2>&1 &) 2>/dev/null || true
+    fi
+else
+    write_state
+fi
+
+# ─── Always exit 0 ───────────────────────────────────────────────────
 exit 0

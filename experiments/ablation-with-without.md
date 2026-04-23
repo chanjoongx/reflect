@@ -13,27 +13,30 @@ Sessions with `reflect` enabled produce fewer reverts and less subjective drift 
 
 ### Setup
 - 2 sessions × ~2 hours each
-- Same task: refactor a known-noisy module (TBD: candidate `src/billing.ts` from a sample repo)
-- Same model (Claude Opus 4.7)
-- Same Claude Code version (TBD: 2.X.Y)
-- Same starting commit (`git checkout` to clean state at start)
+- Same task: **Alt #1 truncation consolidation** — extract `src/utils/truncate.ts` helper covering 8 slice+length sites across `src/context-assembler.ts`, `src/revert-detector.ts`, `src/opus-reflection.ts`. Full prompt: `experiments/ablation-1-task-prompt.md` (gitignored).
+- Same model: `claude-opus-4-7`
+- Same Claude Code version: `2.1.118`
+- Same starting commit: `9e67b14` (synced remote+local)
+- Threshold (A only): `cum_x100 ≥ 240` (default per shell hook)
 
 ### Conditions
 | Condition | reflect | Other |
 |---|---|---|
-| A | Enabled (default threshold 2.4) | Identical |
-| B | Disabled (`REFLECT_DISABLED=1`) | Identical |
+| A | Enabled (default threshold cum_x100 ≥ 240) | Identical |
+| B | Disabled (`REFLECT_DISABLED=1` in `.env`) | Identical |
 
-### Procedure
-1. Day 4 morning: select task, prep clean repo
-2. Day 4 11:00 PT: run Condition A for 2 hours, screen-record
-3. Day 4 14:00 PT: reset repo to same starting commit
-4. Day 4 14:00 PT: run Condition B for 2 hours, screen-record
-5. Day 4 16:00 PT: review both, fill metrics table
+### Procedure (D4 early-shift; deviates from D1 plan due to 05:08 PT catch-up start)
+1. D4 05:08–05:50 PT: prep — coin flip, base SHA verify, `.env` toggle, `rm -rf .reflect/`
+2. D4 06:00–08:00 PT: **Run 1 = Condition B** (REFLECT_OFF), no screen-record (Hawthorne)
+3. D4 08:00–09:00 PT: reset (`git stash && git checkout 9e67b14`, `rm -rf .reflect/`, `.env` toggle)
+4. D4 09:00–11:00 PT: **Run 2 = Condition A** (REFLECT_ON), no screen-record
+5. D4 11:00–12:00 PT: review both, fill metrics table, post + 24h re-rate plan
 
 ### Random ordering
-Run order randomized to avoid bias from CJ getting tired (B might get worse output just because second).
-Coin flip: A first or B first? **TBD**.
+Run order randomized to mitigate fatigue + memorization bias.
+**Coin flip**: bash `$RANDOM = 21483` (odd). Pre-agreed mapping: even → A first, odd → B first.
+**Result**: **B (REFLECT_OFF) runs first, A (REFLECT_ON) runs second.**
+Memorization risk on Run 2 (A) acknowledged in threats-to-validity.
 
 ---
 

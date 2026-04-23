@@ -38,11 +38,15 @@ Trigger phrases for direct invocation: "reflect on this session", "/brain-reflec
 
 ## When reflect fires
 
-Reflect fires when the **PostToolUse hook** observes:
+Reflect fires via **two hooks** observing three tiers of signal:
+- **PostToolUse hook** (`hooks/reflect-trigger.sh` / `.ps1`) — Tier 1 (git revert/restore/checkout) + Tier 2 (file delete of user-path, build-artifact excluded)
+- **UserPromptSubmit hook** (`hooks/reflect-utterance.sh` / `.ps1`) — Tier 3 (utterance negation regex)
+
+Both hooks write to the same `.reflect/state.json`. Trigger condition:
 
 ```
-(count of tier-1 OR tier-2 revert signals) >= 3
-within (last 10 tool_use events)
+cumulative weight ≥ 2.4 (shell stores as cum_x100 ≥ 240, integer × 100 so no bc dependency)
+accumulator resets on fire + 5-turn cooldown (production shell); TS revert-detector.ts uses sliding 10-call window for tests
 ```
 
 ### Revert signal taxonomy
@@ -50,28 +54,27 @@ within (last 10 tool_use events)
 **Tier 1 — Hard signals** (deterministic, count as 1.0):
 - `git revert <sha>` executed via Bash tool
 - File restoration via `git restore <path>` or `git checkout HEAD -- <path>`
-- Explicit slash command `/undo`, `/rollback`, `/revert`
-- File deletion of a file written in the same session
 
 **Tier 2 — Inferred signals** (heuristic, count as 0.7):
-- `Edit` tool call where `new_string` semantically inverts a previous `Edit`
-  on the same file path within the last 5 turns
-- `Write` tool call to a path with content that drops content added in the
-  previous Write/Edit
-- `Bash` call to test runner immediately followed by re-edit of the file
-  the test was about (test → edit → test → edit cycle)
+- `rm <path>` / `unlink <path>` of a user file (build-artifact paths excluded: `node_modules|dist|build|.next|coverage`)
+
+**v1.1 roadmap (documented, NOT in v1 production hook)**:
+- `/undo`, `/rollback`, `/revert` slash commands — currently not matched by any hook
+- `Edit→Edit` semantic inversion same path within 5 turns — reference implementation in `src/revert-detector.ts::detectTier2` but not called by the production shell hook's threshold accumulation
+- `Bash` call to test runner immediately followed by re-edit (test-thrash cycle)
+- `Write` tool call that drops content added in previous Write/Edit
 
 **Tier 3 — Soft signals** (user utterance, count as 0.5):
 - User message contains regex `\b(no|undo|stop|wrong|revert|nope|nah|don't|do not)\b`
   with negation context (NOT preceded by "I see why you said")
 
 ### Trigger arithmetic
-- Sum signal weights across the rolling 10-turn window
-- Threshold: **sum >= 2.4** (e.g., 3× tier-1, or 2× tier-1 + 1× tier-3, etc.)
-- Cooldown: **after firing, suppress next trigger for 5 turns** (avoid loop)
+- Shell hooks accumulate signal weights into `cum_x100` (integer × 100 to avoid `bc` on Windows git-bash)
+- Threshold: **cum_x100 ≥ 240** (= 2.4 weighted; e.g., 3× Tier 1 = 300, or 2× Tier 1 + 1× Tier 3 = 250, etc.)
+- Cooldown: **after firing, cum_x100 resets to 0 and cooldown_remaining = 5** (blocks re-fire for the next 5 tool calls)
 
 ### Manual override
-- `/brain-reflect` slash command always fires regardless of threshold
+- `/brain-reflect` slash command always fires regardless of threshold or cooldown
 
 </trigger_specification>
 
@@ -120,11 +123,10 @@ Per-trigger fresh data.
 ```
 
 ### Total prompt budget
-- L1: 4,500 tokens (cache eligible)
+- L1: 4,741 tokens (measured — ≥ 4,096 cache floor met; see `hackathon/DOGFOOD-LOG.md` Entry #003)
 - L2: ~2,000 tokens (cache eligible)
-- L3: ~3,000 tokens (per call)
-- **Per-call read cost** (after first): 6,500 cache read + 3,000 input + 800 output
-  ≈ $0.038 at Opus 4.7 rates
+- L3: ~3,000 tokens (per call — realistic; cold-start smoke tests may be much smaller)
+- **Per-call cost** — theoretical cold $0.093 / warm $0.038 (full L3 load); measured D2 cold $0.049 / warm $0.009 (smaller L3 during dogfood)
 
 Detailed breakeven math: `docs/api-cost-economics.md`.
 
@@ -138,23 +140,26 @@ Detailed breakeven math: `docs/api-cost-economics.md`.
 
 **Model**: `claude-opus-4-7`
 
-**Critical request shape** (2026-04-21 정정):
+**Critical request shape** (D2 verified live against Opus 4.7, 2026-04-22):
 
 ```typescript
 const response = await client.messages.create({
   model: "claude-opus-4-7",
   max_tokens: 800,
-  // ⚠ NO temperature, top_p, top_k — Opus 4.7 rejects non-default values
+  // ⚠ NO temperature, top_p, top_k — Opus 4.7 rejects non-default values with 400
   thinking: {
     type: "adaptive",
     // ⚠ NO budget_tokens — deprecated, returns 400
-    // effort goes in top-level field for Messages API
+    display: "summarized",  // always on — default "omitted" hides thinking block
   },
-  effort: "high",  // or "xhigh" for coding/agentic tasks
+  output_config: {
+    effort: "high",  // nested in output_config. Top-level effort + thinking.effort both 400
+                     // (per Messages API reference; Extended-Thinking doc page is stale)
+  },
   system: [
     {
       type: "text",
-      text: SYSTEM_PROMPT_L1,  // 4,500+ tokens
+      text: SYSTEM_PROMPT_L1,  // 4,741 tokens measured (≥ 4,096 cache floor)
       cache_control: { type: "ephemeral", ttl: "1h" }
     }
   ],
@@ -169,15 +174,15 @@ const response = await client.messages.create({
         },
         {
           type: "text",
-          text: TRIGGER_PAYLOAD_L3   // ~3,000 tokens, no cache
+          text: TRIGGER_PAYLOAD_L3   // ~3,000 tokens typical, no cache
         }
       ]
     }
   ]
 });
 
-// ⚠ thinking content default omitted in response
-// To inspect: pass display: "summarized" (not relevant for production injection)
+// Response.content contains [thinking summary block, text JSON block].
+// Parser reads only text block (src/opus-reflection.ts:107); thinking surfaces in REFLECT_DEBUG=1.
 ```
 
 ### Why these choices
@@ -264,7 +269,7 @@ The parsed reflection JSON is written to:
 
 This file is **auto-loaded by the next turn** through stetkeep's path-scoped
 rule mechanism (`.claude/rules/reflect-rules.md` declares it as a context
-source for `src/**`, `lib/**`, `app/**`).
+source for `src/**`, `lib/**`, `app/**`, `packages/**`).
 
 ### Format of session-guidance.md
 ```markdown
@@ -330,19 +335,19 @@ source for `src/**`, `lib/**`, `app/**`).
 
 Pricing: $5 input / $25 output / $0.50 cache read / $6.25 cache 5m write / $10 cache 1h write per 1M tokens.
 
-### First trigger (cold cache)
-- L1 1h cache write: 4,500 tok × $10/1M = $0.045
+### First trigger (cold cache — theoretical with full L3)
+- L1 1h cache write: 4,741 tok × $10/1M = $0.047
 - L2 5m cache write: 2,000 tok × $6.25/1M = $0.0125
 - L3 input (no cache): 3,000 tok × $5/1M = $0.015
 - Output: 800 tok × $25/1M = $0.020
-- **Total cold call: ≈ $0.093**
+- **Total theoretical cold: ≈ $0.095** / **measured D2 cold: $0.049** (smaller L3 during dogfood smoke tests)
 
-### Subsequent triggers (warm cache)
-- L1 cache read: 4,500 tok × $0.50/1M = $0.00225
+### Subsequent triggers (warm cache — theoretical with full L3)
+- L1 cache read: 4,741 tok × $0.50/1M = $0.0024
 - L2 cache read: 2,000 tok × $0.50/1M = $0.001
 - L3 input: 3,000 tok × $5/1M = $0.015
 - Output: 800 tok × $25/1M = $0.020
-- **Total warm call: ≈ $0.038**
+- **Total theoretical warm: ≈ $0.038** / **measured D2 warm: $0.009** (95.9% cache hit, smaller L3)
 
 ### Daily projection
 - Assume 5 triggers/day, 1 cold + 4 warm: 0.093 + 4×0.038 = **$0.245/day**
@@ -352,9 +357,8 @@ Pricing: $5 input / $25 output / $0.50 cache read / $6.25 cache 5m write / $10 c
 
 ### Why we are NOT optimizing for token count further
 - Already 60-90% under typical "Opus call" cost
-- L1 must be ≥ 4096 tokens to meet Opus 4.7 cache floor — expanding it improves
-  reflection quality at marginal cost
-- `effort: "high"` produces longer thinking but better reasoning — worth it
+- L1 must be ≥ 4,096 tokens to meet Opus 4.7 cache floor; current 4,741 provides margin for tokenizer variance
+- `output_config.effort: "high"` produces longer thinking but better reasoning — worth it
 
 Detailed math + scenario sweeps: `docs/api-cost-economics.md`.
 
@@ -447,9 +451,9 @@ Documented in detail: `hackathon/FAILURE-MODES.md`.
 ## How a Claude Code session uses reflect
 
 1. User runs `npm install reflect` (or activates plugin via marketplace)
-2. PostToolUse hook is wired via `.claude/settings.json`
+2. PostToolUse + UserPromptSubmit hooks are wired via `.claude/settings.json`
 3. Optionally, user adds `.claude/rules/reflect-rules.md` for path-scoped
-   guidance loading (auto-installed by `npx reflect init`)
+   guidance loading (stub `init` prints instructions; auto-wire is v1.1)
 4. User works normally. reflect is silent.
 5. When revert signals cluster, the hook invokes `bin/reflect.ts`
 6. `bin/reflect.ts` assembles 3-layer prompt, calls Opus 4.7 with adaptive

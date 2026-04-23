@@ -58,11 +58,11 @@ export async function callOpusReflection(
   //       • 1h breakpoint must come before any 5m breakpoint in the same request
   //       • cache floor for Opus 4.7 = 4096 tokens (L1 padding verified separately)
   //
-  // Not yet added (Increment 2):
-  //   - effort: location conflict between extended-thinking (thinking.effort) and
-  //     messages API (output_config.effort) docs. Must live-test to confirm.
-  //   - L1 padding to ≥ 4096 tokens: current SYSTEM_PROMPT_L1 + L1_PADDING_EXAMPLES
-  //     measures ~2736 tokens → silent cache miss until padded.
+  // D2 Increment 2 — verified live against Opus 4.7 (2026-04-22):
+  //   - effort: output_config.effort: "high" accepted (thinking.effort rejected
+  //     with 400 — see hackathon/DOGFOOD-LOG.md finding F3)
+  //   - L1 padding: SYSTEM_PROMPT_L1 + L1_PADDING_EXAMPLES measures 4,741 tokens
+  //     (verified by DOGFOOD-LOG Entry #003: cache_write 4741 ≥ 4096 floor)
   const requestBody = {
     model: config.model,
     max_tokens: config.maxOutputTokens,
@@ -231,8 +231,8 @@ function calculateCacheHitRate(usage: UsageShape): number {
   return cacheRead / total;
 }
 
-// ─── TODO (D2-D3) ─────────────────────────────────────────────────
+// ─── TODO (post-hackathon) ────────────────────────────────────────
 // - Add retry with backoff for 429 / 503
 // - Add token counting (countTokens) before send to verify L1 ≥ 4096
 // - Add streaming support for low-latency UI
-// - Remove @ts-expect-error once SDK types catch up to 2026-04 spec
+// - Replace `as any` cast once @anthropic-ai/sdk types catch up to 2026-04 spec

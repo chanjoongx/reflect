@@ -46,6 +46,7 @@ sequenceDiagram
     participant CC as Claude Code
     participant Hook as PostToolUse Hook
     participant Reflect as reflect-trigger.sh
+    participant Utter as reflect-utterance.sh (UserPromptSubmit)
     participant Core as opus-reflection.ts
     participant API as Opus 4.7 API
     participant Inject as guidance-injector.ts
@@ -56,20 +57,25 @@ sequenceDiagram
     User->>CC: revert (git restore)
     CC->>Hook: PostToolUse(tool_name=Bash)
     Hook->>Reflect: stdin JSON
-    Reflect->>Reflect: increment signal count
+    Reflect->>Reflect: +100 cum_x100 (Tier 1)
     Reflect-->>CC: exit 0 (no block)
+    User->>CC: "no wait" utterance
+    CC->>Utter: UserPromptSubmit(prompt)
+    Utter->>Utter: Tier 3 regex (+50 cum_x100)
+    Utter-->>CC: exit 0 (prompt unchanged)
     CC->>CC: Edit (try again)
     User->>CC: revert
     CC->>Hook: PostToolUse(tool_name=Bash)
     Hook->>Reflect: stdin JSON
-    Reflect->>Reflect: signal sum >= 2.4
-    Reflect->>Core: invoke trigger handler
-    Core->>Core: assemble 3-layer prompt (L1+L2 cached)
-    Core->>API: messages.create(model=claude-opus-4-7, thinking=adaptive)
-    API-->>Core: { pattern, signal, adjustment, confidence, ... }
+    Reflect->>Reflect: cum_x100 >= 240 (integer ×100, shell no bc)
+    Reflect->>Core: nohup spawn bin/reflect.ts trigger (out-of-process)
+    Reflect-->>CC: exit 0 (<=50ms; API call async)
+    Core->>Core: assemble 3-layer prompt (2 cache breakpoints: L1=1h, L2=5m)
+    Core->>API: messages.create(claude-opus-4-7, thinking.adaptive, output_config.effort=high, display=summarized)
+    API-->>Core: content[thinking summary, text JSON]
+    Core->>Core: parse text block (ignore thinking)
     Core->>Inject: parsed reflection
     Inject->>Inject: write .reflect/session-guidance.md
-    Inject-->>CC: hookSpecificOutput.additionalContext (optional)
     User->>CC: next request
     CC->>Rule: load .claude/rules/reflect-rules.md (path-scoped)
     Rule->>CC: includes session-guidance.md content
@@ -93,6 +99,10 @@ PostToolUse fits because:
 3. PostToolUse can return `additionalContext` that lands in next-turn context
 4. Out-of-process — the hook process can't slow down Claude's loop
 
+### Non-blocking execution detail
+
+The hook script exits 0 in ≤50 ms after writing state. The actual Opus 4.7 API call is spawned via `nohup npx tsx bin/reflect.ts trigger … &` in the background (see `hooks/reflect-trigger.sh` and `hooks/reflect-utterance.sh`). Claude Code's tool loop never waits on reflection — guidance lands asynchronously via filesystem (`.reflect/session-guidance.md`) and is picked up by the path-scoped rule on the next turn's file read. This is why PostToolUse is safe for an LLM call that may take 2–5 s.
+
 stetkeep is the PreToolUse layer (prevention). reflect is the PostToolUse
 layer (reasoning). Intentional separation, not redundancy.
 
@@ -100,14 +110,20 @@ layer (reasoning). Intentional separation, not redundancy.
 
 ## 4. The 3-tier revert signal taxonomy
 
-| Tier | Mechanism | Weight | Examples |
+| Tier | Mechanism | Weight | Examples (v1 production hook) |
 |---|---|---|---|
-| **1 (hard)** | Deterministic file/git operation | 1.0 | `git revert`, `git restore`, `/undo`, file delete |
-| **2 (inferred)** | Diff-based heuristic | 0.7 | Edit→Edit semantic inversion, test→edit→test→edit cycle |
-| **3 (soft)** | User utterance | 0.5 | regex match for negation in user message |
+| **1 (hard)** | Deterministic git operation | 1.0 | `git revert`, `git restore`, `git checkout HEAD --` |
+| **2 (inferred)** | File delete heuristic | 0.7 | `rm` / `unlink` of user file (build-artifact paths excluded: `node_modules\|dist\|build\|.next\|coverage`) |
+| **3 (soft)** | User utterance | 0.5 | Conservative negation regex in user message (UserPromptSubmit hook, not PostToolUse) |
 
-**Trigger**: sum of weights in last 10 tool calls ≥ **2.4**.
+**v1.1 roadmap — documented but not in production hook**:
+- `/undo`, `/rollback`, `/revert` slash commands (no hook currently matches these)
+- Tier 2 Edit→Edit semantic inversion same-path within 5 turns (reference impl in `src/revert-detector.ts::detectTier2`, not wired to shell threshold)
+- Tier 2 test→edit→test→edit thrash cycle (not detected)
+
+**Trigger**: accumulated weight ≥ **240** (= 2.4 × 100, stored as integer `cum_x100` so the shell hook can add without `bc`). Each signal adds to `cum_x100` until the threshold fires, then resets. `revert-detector.ts` also implements a strict 10-call sliding window for tests; the production shell accumulator resets on fire and is simpler.
 **Cooldown**: 5 turns post-fire.
+**Tier 3 location**: utterance signals are evaluated on `UserPromptSubmit` by `reflect-utterance.sh`, not on `PostToolUse`. Both hooks write to the same `.reflect/state.json`.
 
 Why these weights:
 - Tier 1 is unambiguous → full weight
@@ -165,9 +181,11 @@ Our layer plan:
 - Break-even: ~2 reads to amortize 1h write
 - Typical session triggers ≥3 times — easy ROI
 
-### Cost per trigger
-- Cold (first call): ≈ $0.093
-- Warm (subsequent): ≈ $0.038
+### Cost per trigger (measured D2)
+- Cold (first call, L1=4,741 tok): ≈ $0.049 (≈ $0.093 theoretical without caching)
+- Warm (subsequent, L1 cache hit ≈ 95%): ≈ $0.009 (≈ $0.038 average, L1 1h + L2 5m)
+
+Measured figures from `hackathon/DOGFOOD-LOG.md` Entries #001–#004. Theoretical figures in [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
 
 Math: [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
 
@@ -185,9 +203,7 @@ For reflection:
 - `effort: "xhigh"` is the new starting point for "coding/agentic" — we evaluate
   in ablations whether the marginal cost is justified for our task
 
-Note: thinking content is **omitted by default** in the response. To inspect
-during debugging, pass `display: "summarized"`. We don't need it in production
-(only the structured JSON matters).
+Note: `display` defaults to `"omitted"` on Opus 4.7. reflect sets `display: "summarized"` on every request (`src/opus-reflection.ts:71`) — the response then contains both a `thinking` summary block and a `text` JSON block. The parser at `src/opus-reflection.ts:107` scans for `type === "text"` and ignores the thinking block: the structured JSON is authoritative; the thinking summary surfaces in `REFLECT_DEBUG=1` output and future audit trails.
 
 ---
 
@@ -217,6 +233,7 @@ paths:
   - "src/**/*.{ts,tsx,js,jsx,mjs,cjs}"
   - "lib/**/*.ts"
   - "app/**/*.tsx"
+  - "packages/**/*.{ts,tsx,js,jsx}"
 ---
 
 # reflect Session Guidance
@@ -248,9 +265,7 @@ delegating to a Claude Managed Agent:
 | Multi-turn | No | Yes (could ask user follow-up) |
 | Fit for v1 | ✅ | Overhead unjustified |
 
-Decision: stay with Messages API for v1. Re-evaluate after D3 Michael Cohen
-session at hackathon. If v1.1 ships deep-reflect mode (multi-turn), Managed
-Agents become attractive.
+Decision: stay with Messages API for v1 — single-shot reflection is the explicit design, and Managed Agents would add session-hour overhead with no user-visible win. If v1.1 ships deep-reflect mode (multi-turn dialog), Managed Agents become attractive.
 
 ---
 
@@ -264,7 +279,10 @@ user-project/
 │       └── reflect-rules.md  # path-scoped, auto-loaded
 │
 ├── .reflect/               # ⭐ ephemeral, gitignored
+│   ├── state.json          # session_id / turn_count / cum_x100 / cooldown_remaining
+│   ├── recent-calls.jsonl  # rolling last 20 tool calls + Tier 3 utterances
 │   ├── session-guidance.md # current reflection (overwritten on trigger)
+│   ├── trigger.log         # async background trigger invocation log
 │   └── session-log.jsonl   # opt-in, 168h auto-deleted
 │
 └── .env                    # ANTHROPIC_API_KEY
@@ -298,7 +316,7 @@ echo '{
   "tool_name":"Bash",
   "tool_input":{"command":"git restore src/foo.ts"},
   "tool_response":{"output":""}
-}' | bash hooks/reflect-trigger.sh
+}' | bash .claude/hooks/reflect-trigger.sh
 # Expected (after enough signals): JSON with hookSpecificOutput
 
 # 2. Manual trigger

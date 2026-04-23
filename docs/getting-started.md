@@ -59,7 +59,7 @@ mkdir -p .claude/rules
 cp node_modules/reflect/.claude/rules/reflect-rules.md .claude/rules/
 ```
 
-This file declares that when Claude reads files in `src/**`, `lib/**`, or `app/**`, it should auto-load `.reflect/session-guidance.md` if it exists.
+This file declares that when Claude reads files in `src/**`, `lib/**`, `app/**`, or `packages/**`, it should auto-load `.reflect/session-guidance.md` if it exists.
 
 ---
 

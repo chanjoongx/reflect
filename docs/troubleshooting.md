@@ -23,6 +23,9 @@ Common issues + fixes for reflect.
    ```
 3. Verify hook executable: `ls -la .claude/hooks/reflect-trigger.sh` should show `x` permissions
 
+### `jq: command not found` in hook output
+Windows git-bash typically lacks `jq` and `bc`. As of D2, reflect's bash hook uses pure-bash integer arithmetic (cumulative weight stored as `cum_x100`, an integer × 100 so no `bc` needed) and `grep`/`sed` fallbacks — `jq` is NOT required. A `jq: command not found` line in logs means the hook has silently fallen back and state should still update. Verify: `cat .reflect/state.json` after a few tool calls should show `turn_count > 0` and a non-zero `cum_x100` after a revert.
+
 ### Path-scoped rule not loading
 - Check `.claude/rules/reflect-rules.md` exists
 - Check the `paths:` frontmatter matches your file paths
@@ -31,6 +34,16 @@ Common issues + fixes for reflect.
 ---
 
 ## Triggering
+
+### What are the signal tiers?
+
+reflect's revert-detector taxonomy. Each weight sums into `cum_x100` (integer × 100) until the threshold (default 240 = 2.4) fires, then resets. Cooldown 5 turns.
+
+- **Tier 1 (weight 1.0 → +100)** — Hard deterministic signal: `git restore`, `git revert`, `git checkout HEAD --`, file delete, `/undo`. Matched by the **PostToolUse** hook (`.claude/hooks/reflect-trigger.sh`).
+- **Tier 2 (weight 0.7 → +70)** — Inferred semantic inversion: two Edits to the same file within 5 turns whose diffs approximately undo each other. Matched by the **PostToolUse** hook.
+- **Tier 3 (weight 0.5 → +50)** — User utterance: conservative regex on the user's prompt matching explicit negation (`"no wait"`, `"undo that"`, `"revert that"`, `"stop—"`). Matched by the **UserPromptSubmit** hook (`.claude/hooks/reflect-utterance.sh`), NOT PostToolUse. Positive-negation phrases (`"you were right"`, `"good point"`, `"makes sense"`) short-circuit to avoid false positives.
+
+Check cumulative state: `cat .reflect/state.json` → `cum_x100`.
 
 ### Reflection never fires
 - Check signal accumulation: `cat .reflect/state.json` after a few reverts

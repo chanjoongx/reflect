@@ -21,9 +21,9 @@ Reason: the model's task here is to OUTPUT JSON. XML in the prompt would compete
 
 ---
 
-## L1 layer composition (~4500 tokens, cached 1h)
+## L1 layer composition (4,741 tokens measured, cached 1h)
 
-The L1 stable layer is the largest and the only one that absolutely must meet Opus 4.7's 4096-token cache floor. Composition:
+The L1 stable layer is the largest and the only one that absolutely must meet Opus 4.7's 4,096-token cache floor. Composition (approximate — measured total is 4,741 per `hackathon/DOGFOOD-LOG.md` Entry #003):
 
 | Section | ~Tokens | Purpose |
 |---|---|---|
@@ -93,7 +93,7 @@ Reflections should be **concise**. Long reflections become noise to the next tur
 - JSON structure: ~40 tokens
 - thinking content (if displayed): ~550 tokens
 
-If `display: "summarized"` is enabled, thinking summary lands in output. Currently not displayed (we extract structured JSON only).
+reflect sets `display: "summarized"` on every call (`src/opus-reflection.ts:71`) — the response contains both a thinking summary block and a text JSON block. The parser at `src/opus-reflection.ts:107` reads only the text block; the thinking summary surfaces in `REFLECT_DEBUG=1` output for audit.
 
 ---
 
@@ -132,4 +132,4 @@ If you find missed clusters: lower to 2.0
 
 ---
 
-**Last updated**: 2026-04-21 D1 (initial prompt design, will iterate via ablations D4)
+**Last updated**: 2026-04-24 D4 (D2 verified API spec, D4 ablation 1 frozen to `experiments/ablation-1-task-prompt.md`)

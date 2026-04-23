@@ -1,16 +1,30 @@
-// src/revert-detector.ts — 3-tier revert signal taxonomy
+// src/revert-detector.ts — 3-tier revert signal taxonomy (REFERENCE IMPL)
 //
-// Per REFLECT.md <trigger_specification>:
-//   Tier 1 (hard, weight 1.0):    git revert / restore / explicit /undo / file delete
-//   Tier 2 (inferred, weight 0.7): Edit→Edit semantic inversion same path
-//   Tier 3 (soft, weight 0.5):    user utterance regex (negation pattern)
+// ⚠ IMPLEMENTATION STATUS (D4 2026-04-24):
+//   This is a TypeScript reference implementation of the full 3-tier taxonomy.
+//   The PRODUCTION hook (hooks/reflect-trigger.sh / .ps1) does NOT call into this
+//   module — it implements a subset directly in shell. Divergences:
 //
-// Trigger when: sum of weights in last N tool calls >= threshold (default 2.4)
-// Cooldown:     M turns post-fire (default 5)
+//     - File delete: this file classifies as Tier 1 w=1.0; production shell
+//       classifies as Tier 2 +70 (build-artifact-excluding heuristic). The
+//       shell behavior is canonical per ARCHITECTURE.md §4.
+//     - Tier 2 Edit→Edit semantic inversion: only implemented here (detectTier2).
+//       The production shell never calls this — Tier 2 inversion does NOT
+//       contribute to the threshold in v1.
+//     - /undo slash command: documented in this file's comments but matched
+//       by neither this module nor the production shell.
+//     - shouldTrigger() uses a strict 10-call sliding window; production shell
+//       uses a monotonic accumulator that resets on fire (simpler, no window).
 //
-// Note: Tier 1 & 2 detected by reflect-trigger.sh (PostToolUse hook).
-// Tier 3 detected from UserPromptSubmit hook (separate event).
-// This file consolidates the taxonomy + threshold logic for src use.
+// This module is retained for: (1) tests (once we add them), (2) as the
+// future wiring target when v1.1 deep-reflect mode ships, (3) documenting
+// the full-fidelity taxonomy that v1 partially implements.
+//
+// Per REFLECT.md <trigger_specification> (full v1.1 taxonomy):
+//   Tier 1 (hard, weight 1.0):    git revert / restore / checkout HEAD --
+//   Tier 2 (inferred, weight 0.7): rm/unlink user path (v1 shell);
+//                                  Edit→Edit inversion (v1.1 aspiration, here only)
+//   Tier 3 (soft, weight 0.5):    user utterance regex (UserPromptSubmit hook)
 
 import type {
   RevertSignal,

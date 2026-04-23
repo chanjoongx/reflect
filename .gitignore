@@ -90,3 +90,5 @@ venv/
 # reflect ablation outputs (committed selectively, raw runs ignored)
 experiments/runs/
 experiments/*.raw.json
+# Ablation task prompts are internal methodology — results (ablation-with-without.md, ablation-components.md) are public
+experiments/ablation-*-task-prompt.md

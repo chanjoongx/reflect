@@ -15,57 +15,65 @@ All prices are 2026-04-21 Opus 4.7 standard rate (per 1M tokens):
 
 | Layer | Size | Cache TTL |
 |---|---|---|
-| L1 stable | 4,500 tok | 1h |
-| L2 medium | 2,000 tok | 5m |
-| L3 ephemeral | 3,000 tok | none |
+| L1 stable | 4,741 tok measured (≥ 4,096 cache floor) | 1h |
+| L2 medium | ~2,000 tok | 5m |
+| L3 ephemeral | ~3,000 tok typical (dogfood smoke tests run smaller) | none |
 | Output | up to 800 tok | n/a |
 
 ---
 
-## Cold call (first reflection in session)
+## Cold call — theoretical vs measured
+
+**Theoretical** (first reflection, full L3 ~3,000 tok):
 
 | Item | Tokens | Rate | Cost |
 |---|---|---|---|
-| L1 cache write 1h | 4,500 | $10/M | $0.045 |
+| L1 cache write 1h | 4,741 | $10/M | $0.047 |
 | L2 cache write 5m | 2,000 | $6.25/M | $0.0125 |
 | L3 input (no cache) | 3,000 | $5/M | $0.015 |
 | Output | 800 | $25/M | $0.020 |
-| **Total** | | | **$0.0925** |
+| **Theoretical total** | | | **$0.095** |
+
+**Measured D2** (`hackathon/DOGFOOD-LOG.md` Entry #003): **$0.049 cold** (smaller L3 during smoke tests; output 800 tok accurate).
 
 ---
 
-## Warm call (within same hour as cold call)
+## Warm call — theoretical vs measured
+
+**Theoretical** (within same 1h as cold, full L3):
 
 | Item | Tokens | Rate | Cost |
 |---|---|---|---|
-| L1 cache read | 4,500 | $0.50/M | $0.00225 |
+| L1 cache read | 4,741 | $0.50/M | $0.0024 |
 | L2 cache read (if within 5m) | 2,000 | $0.50/M | $0.001 |
 | L3 input | 3,000 | $5/M | $0.015 |
 | Output | 800 | $25/M | $0.020 |
-| **Total** | | | **$0.038** |
+| **Theoretical total** | | | **$0.038** |
 
-If L2 expired (>5min between calls), L2 must be re-written — adds $0.0125 → **$0.05** per call.
+**Measured D2**: **$0.009 warm** (95.9% cache hit, smaller L3). Both numbers are honest — which applies depends on L3 size at your call site.
+
+If L2 expired (>5min between calls), L2 must be re-written — adds $0.0125 → **$0.05** theoretical per call.
 
 ---
 
 ## Daily projection
 
-Assuming 5 reflections/day, 1 cold + 4 warm:
+Assuming 5 reflections/day, 1 cold + 4 warm (theoretical):
 
 ```
-0.0925 + 4 × 0.038 = $0.245/day
+0.095 + 4 × 0.038 = $0.247/day
 ```
 
-Hackathon $500 credit at this rate → **2,040 days**. Effectively unlimited for individual use.
+Hackathon $500 credit at this rate → **~2,000 days**. Effectively unlimited for individual use.
 
 ---
 
 ## Heavy session (demo recording day)
 
-20 reflections, all warm after first:
+20 reflections, all warm after first (theoretical):
 
 ```
-0.0925 + 19 × 0.038 = $0.815
+0.095 + 19 × 0.038 = $0.817
 ```
 
 Still under $1.
@@ -74,16 +82,16 @@ Still under $1.
 
 ## Break-even analysis: 1h vs 5m TTL on L1
 
-L1 size: 4,500 tokens
-- 5m write: $0.028 (1.25× input)
-- 1h write: $0.045 (2× input)
-- Read: $0.00225 (0.1× input)
+L1 size: 4,741 tokens measured
+- 5m write: $0.030 (1.25× input)
+- 1h write: $0.047 (2× input)
+- Read: $0.0024 (0.1× input)
 
 Break-even reads (1h vs 5m, if 5m would expire):
 ```
-extra_cost_1h = 0.045 - 0.028 = $0.017
-saved_per_avoided_rewrite = 0.028 - 0.00225 = $0.026
-break_even = 0.017 / 0.026 ≈ 0.65 rewrites avoided
+extra_cost_1h = 0.047 - 0.030 = $0.017
+saved_per_avoided_rewrite = 0.030 - 0.0024 = $0.028
+break_even = 0.017 / 0.028 ≈ 0.61 rewrites avoided
 ```
 
 → If you'd otherwise rewrite L1 cache **even once** within the hour, 1h TTL pays off.

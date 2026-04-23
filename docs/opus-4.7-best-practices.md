@@ -19,12 +19,21 @@ thinking: { type: "adaptive" }
 `budget_tokens` returns **400 error** on Opus 4.7. The model self-determines thinking depth.
 
 ### Effort parameter
-Control intensity via top-level `effort` field:
+
+Control reasoning intensity via `output_config.effort`:
+
+```typescript
+output_config: { effort: "high" }
+```
+
+Values:
 - `low`
 - `medium`
 - `high` — reflect's default
 - `xhigh` — Anthropic's recommended starting point for coding/agentic
 - `max` — CLI/skill-only, not Messages API
+
+⚠ `effort` is **nested inside `output_config`**, NOT top-level. Both top-level `effort` and `thinking.effort` return `400 Extra inputs are not permitted` on Opus 4.7. The Extended-Thinking doc page shows `thinking.effort` — the Messages API reference wins (see finding F3 in `hackathon/DOGFOOD-LOG.md`).
 
 reflect uses `high` by default. Test `xhigh` for your use case if you want richer reflections at ~30% cost increase.
 
@@ -74,7 +83,7 @@ For Opus 4.7 / 4.6 / 4.5 / Haiku 4.5, the minimum cacheable block is **4,096 tok
 
 If a `cache_control` block is below this floor, caching silently fails (no error, just no cache_creation_input_tokens). Verify with `usage.cache_*` fields.
 
-reflect's L1 layer is sized to ≥ 4500 tokens with calibration examples to safely meet the floor, with margin for the new tokenizer.
+reflect's L1 layer is sized to 4,741 tokens measured (≥ 4,096 floor + margin for tokenizer variance), via calibration examples in `src/context-assembler.ts::L1_PADDING_EXAMPLES`.
 
 ---
 
@@ -120,9 +129,9 @@ reflect doesn't approach 1M (typical prompt is ~10K tokens), so this is informat
 Opus 4.7 uses a new tokenizer. Same English text may produce up to 35% more tokens than Opus 4.6 / GPT-4 baselines.
 
 ### Implications for reflect
-- L1 layer sized to ≥ 4500 tokens with margin
+- L1 layer measured at 4,741 tokens (≥ 4,096 floor + margin)
 - `max_tokens: 800` may produce slightly less actual output than expected
-- Use `client.beta.messages.countTokens()` to verify L1 ≥ 4096 in production
+- Use `client.beta.messages.countTokens()` to verify L1 ≥ 4,096 in production
 
 ---
 

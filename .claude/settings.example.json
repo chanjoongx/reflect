@@ -17,6 +17,18 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "_comment": "Tier 3 (utterance) detection. UserPromptSubmit does not support matchers — fires on every prompt. Filtering happens inside the script. PowerShell users: replace with reflect-utterance.ps1.",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/reflect-utterance.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

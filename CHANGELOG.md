@@ -164,8 +164,8 @@ Built during *Built with Opus 4.7: a Claude Code Hackathon* (Cerebral Valley + A
   - Domain-awareness test deferred to v1.1 with specific rerun plan (real code fixture `experiments/fixtures/kyc-validator.ts`, internally consistent sequence)
 - ✅ DEMO-SCRIPT 02:00-02:30 `[N]` placeholder filled with actual counts: **6 reflections total** (1 changed next move, 1 blocked by delivery gap, 4 smoke tests + 1 complementary-layers scenario)
 - ✅ DOGFOOD #006 + #007 + F4 dev-finding all filled
-- ✅ FAILURE-MODES §2 + §3 real-session 실험 결과 blocks filled + experiment-design caveats added (honest framing of prompt-injection concerns)
-- ✅ `587d7bc` — Korean-drift-to-English translation pushed (CHANGELOG D2-D4 progress + docs footers + src/opus-reflection critical comment + .gitignore 4 lines). **GitHub repo text files 100% English verified** (ripgrep `[가-힣]` = 0 matches across git ls-files)
+- ✅ FAILURE-MODES §2 + §3 real-session experiment-result blocks filled + experiment-design caveats added (honest framing of prompt-injection concerns)
+- ✅ `587d7bc` — Korean-drift-to-English translation pushed (CHANGELOG D2-D4 progress + docs footers + src/opus-reflection critical comment + .gitignore 4 lines). **GitHub repo text files 100% English verified** (ripgrep Unicode Hangul range `[\u{AC00}-\u{D7A3}]` = 0 matches across git ls-files)
 - ✅ README.md working tree restored clean post-Scenario-3
 
 ### Honest gaps (D5 afternoon, D6 remaining)

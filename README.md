@@ -51,15 +51,17 @@ Cold call ≈ $0.05 · warm call ≈ $0.01 (95% L1 cache hit observed D2) · lat
 ## Install
 
 ```bash
-npm install reflect
+npm install @chanjoongx/reflect
 npx reflect init      # prints the 4 manual setup steps (auto-wire is v1.1)
 ```
 
+> Published under the scoped name `@chanjoongx/reflect` on npm. The binary stays `reflect` (so `npx reflect ...` works unchanged). The unscoped `reflect` name is taken by a pre-existing JavaScript parser; scoping keeps the CLI identity clear and avoids name collision.
+
 The v1 `init` prints copy-paste instructions; you manually:
 
-1. Copy `node_modules/reflect/.env.example` → `.env` and set `ANTHROPIC_API_KEY=sk-ant-...`
-2. Copy `node_modules/reflect/.claude/settings.example.json` → `.claude/settings.json` (or merge the `hooks.PostToolUse` + `hooks.UserPromptSubmit` blocks into your existing `settings.json`)
-3. Copy `node_modules/reflect/.claude/rules/reflect-rules.md` → `.claude/rules/reflect-rules.md` (path-scoped: `src/**`, `lib/**`, `app/**`, `packages/**`)
+1. Copy `node_modules/@chanjoongx/reflect/.env.example` → `.env` and set `ANTHROPIC_API_KEY=sk-ant-...`
+2. Copy `node_modules/@chanjoongx/reflect/.claude/settings.example.json` → `.claude/settings.json` (or merge the `hooks.PostToolUse` + `hooks.UserPromptSubmit` blocks into your existing `settings.json`)
+3. Copy `node_modules/@chanjoongx/reflect/.claude/rules/reflect-rules.md` → `.claude/rules/reflect-rules.md` (path-scoped: `src/**`, `lib/**`, `app/**`, `packages/**` — v0.2 widens to include root-level files like README/CHANGELOG)
 4. Add `.reflect/` to your `.gitignore`
 
 **Restart Claude Code** so it picks up the new hook and rule files.

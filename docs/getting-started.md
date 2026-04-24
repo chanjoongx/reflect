@@ -18,10 +18,10 @@ This guide gets you from `npm install` to a working `reflect` reflection in unde
 
 ```bash
 cd /path/to/your-project
-npm install reflect
+npm install @chanjoongx/reflect
 ```
 
-This installs `reflect` and its dependency `stetkeep` (used internally for path-scoped rule auto-loading).
+This installs `@chanjoongx/reflect` and its dependency `stetkeep` (used internally for path-scoped rule auto-loading). The binary is `reflect` so `npx reflect ...` works unchanged. Scoped name because the unscoped `reflect` on npm is an older JavaScript parser package.
 
 ---
 

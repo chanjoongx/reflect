@@ -11,9 +11,10 @@ Common issues + fixes for reflect.
 2. `.env` contains: `ANTHROPIC_API_KEY=sk-ant-...`
 3. If using `npx reflect`, the env may not load — try `npm run reflect` or `dotenv -e .env npx reflect`
 
-### `npm install reflect` fails
+### `npm install @chanjoongx/reflect` fails
 - Node 20+ required: `node --version`
 - Try `npm install --no-optional` if peer deps issue
+- If you see "404 Not Found for reflect" — you're using the unscoped name; it's a different (older) package. Use `@chanjoongx/reflect` with the `@` prefix.
 
 ### Hook doesn't fire after reverts
 1. Check `.claude/settings.json` exists with `hooks.PostToolUse` block

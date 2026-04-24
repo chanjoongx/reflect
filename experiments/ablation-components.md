@@ -1,11 +1,19 @@
-# Ablation 2: Component-drop ablation
+# Ablation 2: Component-drop ablation — **DEFERRED to v1.1**
 
-> Thariq Lab requirement T1 (second study). Causal isolation of which prompt components matter most.
-> Run plan: D4-D5 (2026-04-24/25).
+> **Status (2026-04-24 D4 late afternoon PT)**: This ablation is **deferred to v1.1** together with Ablation 1. See `experiments/ablation-with-without.md` for the unified decision-log.
+> Preserved below as originally designed — the payload + rubric + rater methodology is intended to be picked up verbatim once the DOGFOOD dataset grows past N = 30 across multiple users.
 
 ---
 
-## Hypothesis
+## Why deferred (short form)
+
+Ablation 2 presupposes a stable set of 5 high-quality trigger payloads sourced from dogfood. At D4 late PT, the dogfood corpus contains 4 real entries (#001–#004), all of which are smoke-test or stub-data manual triggers rather than organic revert clusters — the distribution we would need to represent in the payload set. Running with 4 stub payloads would multiply the N=2 self-experiment problem of Ablation 1: the conclusions would be about how Opus 4.7 reasons over *stub* payloads, not how it reasons over organic drift.
+
+The correct input to this experiment is a corpus of organic drift payloads from real multi-user usage, which does not exist yet and is exactly what v1 is designed to collect via the opt-in `.reflect/session-log.jsonl` (168h auto-delete). We ship v1 first, collect the data honestly, then run this ablation once the Phase 2 trigger condition (50 users × 10 sessions, useful rate > 60%) is met.
+
+---
+
+## Hypothesis (original design, preserved for reference)
 
 The L2 (active rules) and L3 (recent tool calls + diff) components both contribute to reflection quality, but in different ways:
 - Drop L2 → reflections become generic / lose context-awareness
@@ -98,4 +106,4 @@ Negative findings are equally publishable.
 
 ---
 
-**Status (D4 late AM)**: Plan documented D1. **Run deferred to D5 morning** (D4 catch-up: DOGFOOD entries 4 real / target 5 — payload 5개 freeze 위해 1개 부족, 자연 +2-4 entries D4 afternoon ablation Run 2 또는 DOGFOOD bulk session 후 D5 morning execute 가능). Path A (ablation 진행) 시 Run 2 의 자연 entries 후 D5 morning, Path 4 (skip) 시 v1.1 deferred. Results: TBD.
+**Status (D4 late afternoon PT)**: Plan documented D1. **Run deferred to v1.1** (post-hackathon) once organic dogfood payload corpus reaches N ≥ 30 across 5+ users. See `experiments/ablation-with-without.md` decision-log for unified rationale. Results: TBD, Phase 2.

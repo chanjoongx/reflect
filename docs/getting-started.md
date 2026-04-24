@@ -18,10 +18,10 @@ This guide gets you from `npm install` to a working `reflect` reflection in unde
 
 ```bash
 cd /path/to/your-project
-npm install @chanjoongx/reflect
+npm install @chanjoongx/reflect@alpha
 ```
 
-This installs `@chanjoongx/reflect` and its dependency `stetkeep` (used internally for path-scoped rule auto-loading). The binary is `reflect` so `npx reflect ...` works unchanged. Scoped name because the unscoped `reflect` on npm is an older JavaScript parser package.
+This installs `@chanjoongx/reflect@0.1.0-alpha.1` (current alpha release) and its dependency `stetkeep` (used internally for path-scoped rule auto-loading). The binary is `reflect` so `npx reflect ...` works unchanged. Scoped name because the unscoped `reflect` on npm is an older JavaScript parser package; `@alpha` tag because v1 is pre-release until `0.1.0` stable — bare `npm install @chanjoongx/reflect` returns 404 by design until then.
 
 ---
 

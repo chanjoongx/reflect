@@ -447,7 +447,7 @@ Documented in detail: [`docs/measurements.md`](docs/measurements.md#failure-mode
 
 ## How a Claude Code session uses reflect
 
-1. User runs `npm install @chanjoongx/reflect` (or activates plugin via marketplace)
+1. User runs `npm install @chanjoongx/reflect@alpha` (or activates plugin via marketplace)
 2. PostToolUse + UserPromptSubmit hooks are wired via `.claude/settings.json`
 3. Optionally, user adds `.claude/rules/reflect-rules.md` for path-scoped
    guidance loading (stub `init` prints instructions; auto-wire is v1.1)

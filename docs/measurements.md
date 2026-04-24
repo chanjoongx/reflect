@@ -102,4 +102,22 @@ Maintainers use reflect during its own development. Triggered reflections are lo
 
 ---
 
-**Last updated**: 2026-04-24 D4 late AM (4 D4 commits pushed `01ed845`). Ablation data + per-release Y-rate statistics **to be added post-D5** (D4 ablation decision pending — if Path A proceeds, publish D4 evening; if Path 4 skip, deferred to v1.1 with decision-log).
+## Real-session reflection measurement (D5 — 2026-04-24/25)
+
+A second live measurement set comes from D5 Scenario 2 (FAILURE-MODES.md §2 real-session execution): a 7-turn intent-shift sequence with 3× `git restore README.md` + 2 utterance Tier 3 matches. Hook fired at T5 PostToolUse, `cum_x100=300 > threshold 240`.
+
+| Metric | Measured |
+|---|---|
+| Latency | 5,296 ms |
+| Cost | $0.0647 (cold; D4 evening prior fire >1h prior, L1 1h TTL expired) |
+| Cache hit | 0 % (cold) |
+| Output tokens | ~370 (reflection JSON + thinking summary) |
+| `false_trigger_likelihood` output | **high** ✅ — H1 hypothesis confirmed (intent-shift correctly flagged) |
+| Confidence output | medium (honest under-claim — 4 convergent signals would support high; reflection acknowledged user meta-comment dependence) |
+| Adjustment format | question-framed ✅ — "ask a single clarifying question..." |
+
+D5 also surfaced an unexpected architectural finding via Scenario 3: **two complementary safety layers**. Claude Code's intrinsic pre-execution reasoning blocked 4 of 7 prompts on semantic contradiction grounds before tool execution — reflect's hook never fired because no tools ran. This was originally framed as a domain-awareness test that "failed"; reframed honestly, it demonstrates that Claude's own reasoning catches *turn-visible* contradictions, while reflect's post-hoc layer catches *multi-turn-only* accumulated patterns. Complementary, not redundant. Detail in [`hackathon/FAILURE-MODES.md`](../hackathon/FAILURE-MODES.md) §3 (gitignored, but the architectural takeaway is summarized in `docs/tutorial.md`).
+
+---
+
+**Last updated**: 2026-04-24 D5 afternoon PT (16 commits pushed `70f38ab`). D2 measurements + D5 Scenario 2 measurements both from real sessions. Ablation data deferred to v1.1 (N ≥ 30 across 5+ users) per `experiments/ablation-with-without.md` decision-log — single-subject n-of-1 case studies in this hackathon are explicitly framed as "honest small numbers, not controlled trial."

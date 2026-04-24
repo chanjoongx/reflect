@@ -1,10 +1,10 @@
 // src/opus-reflection.ts — Opus 4.7 API client
 //
-// CRITICAL (2026-04-21 정정 — RESEARCH-FINDINGS-2026-04-21.md):
+// CRITICAL (2026-04-21 correction — RESEARCH-FINDINGS-2026-04-21.md):
 //   - thinking: { type: "adaptive" }   (NOT budget_tokens — deprecated, returns 400)
 //   - effort: "high"                    (or "xhigh" for coding/agentic)
 //   - NO temperature/top_p/top_k        (non-default returns 400)
-//   - cache_control ttl: "1h" on L1     (extended thinking 5m 빈번 초과)
+//   - cache_control ttl: "1h" on L1     (extended thinking frequently exceeds 5m)
 //   - 1h breakpoint MUST come before 5m breakpoint
 //   - Min cacheable for Opus 4.7 = 4,096 tokens
 //   - Pricing: $5 input / $25 output / $0.50 cache read / $6.25 5m write / $10 1h write per 1M

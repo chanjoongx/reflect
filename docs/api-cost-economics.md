@@ -175,4 +175,4 @@ If your daily cost exceeds:
 
 ---
 
-**Last updated**: 2026-04-24 D4 late AM (본문 cost figures verified vs D2 measured: cold $0.049 / warm $0.009 / cache hit 95.9%, L1 4,741 tokens). 가격표 + theoretical math + measurement reconciliation 모두 D4 reality 와 일치.
+**Last updated**: 2026-04-24 D4 late AM (body cost figures verified vs D2 measured: cold $0.049 / warm $0.009 / cache hit 95.9%, L1 4,741 tokens). Pricing table + theoretical math + measurement reconciliation all aligned with D4 reality.

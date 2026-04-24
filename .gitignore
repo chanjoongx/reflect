@@ -8,7 +8,7 @@
 # All comments must be on their own line.
 # ===================================================================
 
-# Secrets — 절대 커밋 금지
+# Secrets — never commit
 .env
 .env.local
 .env.*.local
@@ -20,11 +20,11 @@ secrets.json
 # API / runtime artifacts (session-guidance.md + session-log.jsonl, ephemeral)
 .reflect/
 
-# Internal docs (PII + 전략) — local only
+# Internal docs (PII + strategy) — local only
 CLAUDE.md
 hackathon/
 
-# Legacy paths (이미 hackathon/ 으로 이동됨, 안전망)
+# Legacy paths (already moved to hackathon/, safety net)
 docs/HACKATHON.md
 docs/NEXT_SESSION.md
 
@@ -102,7 +102,7 @@ experiments/payloads/
 # Claude Code conversation transcripts (safety net — normally at ~/.claude/projects/, but if repo-local .claude/projects/ created, contains PII: user prompts + Claude responses)
 .claude/projects/
 
-# npm artifacts (post-hackathon publish 가능성)
+# npm artifacts (post-hackathon publish possibility)
 *.tgz
 .npm/
 

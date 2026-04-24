@@ -91,53 +91,53 @@ Built during *Built with Opus 4.7: a Claude Code Hackathon* (Cerebral Valley + A
 
 ### D2 Progress (2026-04-22)
 
-- ✅ Tarek AMA 참석 (Discord #hackathon-stage)
-- ✅ Anthropic API spec 직접 verify (platform.claude.com fetch) — `output_config.effort` accepted, `thinking.effort` rejected (extended-thinking page outdated)
-- ✅ L1 token padding 4,741 (≥ 4,096 cache floor) — D1 의 silent cache miss (2,736 < 4,096) 해결
+- ✅ Attended Tarek AMA (Discord #hackathon-stage)
+- ✅ Directly verified Anthropic API spec (platform.claude.com fetch) — `output_config.effort` accepted, `thinking.effort` rejected (extended-thinking page outdated)
+- ✅ L1 token padding 4,741 (≥ 4,096 cache floor) — resolved D1 silent cache miss (2,736 < 4,096)
 - ✅ Cache hit rate 95.9% measured (D2 Entry #003) + cost $0.009 warm
 - ✅ `src/revert-detector.ts` Tier 1+2 production shell impl (canonical)
 - ✅ `src/context-assembler.ts` real data sources (no stubs)
-- ✅ First real E2E (DOGFOOD #004): hook → trigger → API call → guidance.md write 전체 사이클
-- ✅ Hook cross-platform fix: Windows git-bash 의 jq+bc 부재 — pure-bash integer arithmetic (weights × 100) + grep/sed fallback rewrite
+- ✅ First real E2E (DOGFOOD #004): full cycle hook → trigger → API call → guidance.md write
+- ✅ Hook cross-platform fix: Windows git-bash missing jq+bc — pure-bash integer arithmetic (weights × 100) + grep/sed fallback rewrite
 
 ### D3 Progress (2026-04-23)
 
-- ✅ Michael Cohen Managed Agents session 참석 → Q12 결정: 옵션 B (raw API + single-shot)
+- ✅ Attended Michael Cohen Managed Agents session → Q12 decision: Option B (raw API + single-shot)
 - ✅ `hooks/reflect-utterance.sh` + `.ps1` — Tier 3 utterance regex (UserPromptSubmit hook, NOT PostToolUse)
-- ✅ `src/guidance-injector.ts` 완성 + lifecycle (overwrite on trigger, delete on session end)
+- ✅ `src/guidance-injector.ts` completed + lifecycle (overwrite on trigger, delete on session end)
 - ✅ `src/logger.ts` opt-in `.reflect/session-log.jsonl` + 168h auto-prune
-- ✅ `bin/reflect.ts` CLI subcommands 모두 작동 (init/status/manual/log/off/on)
-- ✅ FAILURE-MODES Scenario 1 (cold-start sessions) 분석 완료 — Two-layer safety net + 5 edge cases + mock test seq
+- ✅ All `bin/reflect.ts` CLI subcommands working (init/status/manual/log/off/on)
+- ✅ FAILURE-MODES Scenario 1 (cold-start sessions) analysis complete — Two-layer safety net + 5 edge cases + mock test seq
 
 ### D4 Progress (2026-04-24)
 
 #### D4 morning (3 commits pushed)
-- ✅ `4c39193` — ARCHITECTURE drift 10 items + README v1.0 (4-section + 6 details) + REFLECT.md `output_config.effort` fix (judges copy-paste 400-error risk 제거) + spec-reality alignment
+- ✅ `4c39193` — ARCHITECTURE drift 10 items + README v1.0 (4-section + 6 details) + REFLECT.md `output_config.effort` fix (removes judges copy-paste 400-error risk) + spec-reality alignment
 - ✅ `c12db62` — CI hook smoke-test env-var prefix fix + state.json content assertion + Tier 3 step
-- ✅ `9e67b14` — `docs/measurements.md` 신설 + 14 public MD links repoint to hackathon/ (GitHub 404 방지)
+- ✅ `9e67b14` — new `docs/measurements.md` + 14 public MD links repointed to hackathon/ (prevents GitHub 404)
 - ✅ Ablation 1 prompt Alt #1 swap (3-file cross-file truncation, 8 sites, no L1 cache landmine) — original D4-PREP "shared prompt-building helpers" was contrived per 3-round agent verification reject
 - ✅ GitHub repo state fix: Linguist detected (TS 46K / Shell 29K / PS 23K / JS 11K), description + 15 topics set, `[branch "main"]` tracking config wired
 
 #### D4 catch-up session (5:08-7:00 PT, 1 commit pushed)
 - ✅ `01ed845` — `experiments/ablation-with-without.md` sync to D4 reality (Cond A/B labels FIXED + early-shift schedule + coin flip seed `$RANDOM=21483` odd → Run 1=Cond B / Run 2=Cond A)
-- ✅ Coin flip + ablation prep: `.env` `REFLECT_DISABLED=1` + `REFLECT_LOG_ENABLED=1` set, `.reflect/` 삭제, ablation files synced
+- ✅ Coin flip + ablation prep: `.env` `REFLECT_DISABLED=1` + `REFLECT_LOG_ENABLED=1` set, `.reflect/` cleared, ablation files synced
 - ✅ 19 hackathon/*.md drift fix sweep (~50 Edits) — DEMO/COST/SUBMISSION/ACCEPTANCE-MATRIX/EXECUTION-PLAN/D4-PREP/FAILURE-MODES/DOGFOOD/CLAUDE/6-LAB/SUBMISSION-CHECKLIST/PII-AUDIT/HACKATHON/JUDGES/APPLICATION/OFFICE-HOURS/DISCORD-INTEL/RESEARCH-FINDINGS/NEXT_SESSION
-- ✅ `hackathon/BRAIN-CHECKSUM.md` 신설 — cross-file spec consistency map (17 row Tier 1/2/3) + verification commands + self-limitations + v1.1 path
-- ✅ Cross-file consistency reconciled (10 axis): DOGFOOD count / Cost figures / Cache hit / output_config.effort / Auto mode / Managed Agents 옵션 B / Ablation A/B 시나리오 / D4 morning commits / ACCEPTANCE 19/30 / D5 미루기
+- ✅ New `hackathon/BRAIN-CHECKSUM.md` — cross-file spec consistency map (17 row Tier 1/2/3) + verification commands + self-limitations + v1.1 path
+- ✅ Cross-file consistency reconciled (10 axis): DOGFOOD count / Cost figures / Cache hit / output_config.effort / Auto mode / Managed Agents Option B / Ablation A/B scenarios / D4 morning commits / ACCEPTANCE 19/30 / D5 deferrals
 
 ### Honest gaps (D4 late AM)
 
-- ⏳ Ablation Run 1/2 진행/skip decision pending (사용자)
+- ⏳ Ablation Run 1/2 proceed/skip decision pending (user)
 - ⏳ DOGFOOD entries 4 → target 12 (gap 8, D4 afternoon/D5 morning bulk session)
 - ⏳ FAILURE-MODES Scenarios 2/3 real-session (D4 afternoon if skip OR D5 morning if Path A)
 - ⏳ Demo dry-run ×1-3 (D4 evening)
 - ⏳ Demo recording (D5 9-12 PT)
-- ⏳ Submission form (D6 14-16 PT, 5 PM PT 마감)
+- ⏳ Submission form (D6 14-16 PT, 5 PM PT deadline)
 - ⏳ npm publish (post-hackathon decision)
 
 ### Status: pre-alpha, hackathon D4 late AM (working code, 4 commits pushed `01ed845`)
 
-**Acceptance**: 19/30 fully + 4 partial = ~21/30 effective. D5 25 + D6 28 목표 달성 가능.
+**Acceptance**: 19/30 fully + 4 partial = ~21/30 effective. D5 25 + D6 28 target achievable.
 **Cumulative cost**: D3 EOD $18.78 / $500. D4 estimate +$29-39.
 **Submission**: 2026-04-26 5:00 PM PT to *Built with Opus 4.7: a Claude Code Hackathon*.
 

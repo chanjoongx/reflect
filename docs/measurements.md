@@ -102,4 +102,4 @@ Maintainers use reflect during its own development. Triggered reflections are lo
 
 ---
 
-**Last updated**: 2026-04-24 D4 late AM (4 D4 commits pushed `01ed845`). Ablation data + per-release Y-rate statistics **to be added post-D5** (D4 ablation decision pending — Path A 진행 시 D4 evening publish, Path 4 skip 시 v1.1 deferred with decision-log).
+**Last updated**: 2026-04-24 D4 late AM (4 D4 commits pushed `01ed845`). Ablation data + per-release Y-rate statistics **to be added post-D5** (D4 ablation decision pending — if Path A proceeds, publish D4 evening; if Path 4 skip, deferred to v1.1 with decision-log).

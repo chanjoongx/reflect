@@ -26,7 +26,7 @@ const steps: Step[] = [
           Installs the CLI + plugin into your project. reflect is session-local —
           nothing runs outside this directory.
         </p>
-        <CopyBlock code="npm install reflect" />
+        <CopyBlock code="npm install @chanjoongx/reflect@alpha" />
       </div>
     ),
   },
@@ -40,7 +40,7 @@ const steps: Step[] = [
           the Messages API with prompt caching — billing is per reflection, not
           per tool call.
         </p>
-        <CopyBlock code="cp node_modules/reflect/.env.example .env" />
+        <CopyBlock code="cp node_modules/@chanjoongx/reflect/.env.example .env" />
         <CopyBlock code="ANTHROPIC_API_KEY=sk-ant-..." language="env" />
         <div className="flex items-start gap-3 rounded-lg border border-[rgba(212,162,127,0.3)] bg-[rgba(212,162,127,0.08)] p-3">
           <AlertTriangle
@@ -74,7 +74,7 @@ const steps: Step[] = [
           <code className="font-mono text-[12px]">UserPromptSubmit</code>{" "}
           (Tier 3 utterance regex).
         </p>
-        <CopyBlock code="cp node_modules/reflect/.claude/settings.example.json .claude/settings.json" />
+        <CopyBlock code="cp node_modules/@chanjoongx/reflect/.claude/settings.example.json .claude/settings.json" />
         <p className="text-sm leading-relaxed text-white/55">
           Or merge the{" "}
           <code className="font-mono text-[12px]">hooks.PostToolUse</code> +{" "}
@@ -96,7 +96,7 @@ const steps: Step[] = [
           <code className="font-mono text-[12px]">lib/**</code> — it does not
           pollute every prompt.
         </p>
-        <CopyBlock code="cp node_modules/reflect/.claude/rules/reflect-rules.md .claude/rules/reflect-rules.md" />
+        <CopyBlock code="cp node_modules/@chanjoongx/reflect/.claude/rules/reflect-rules.md .claude/rules/reflect-rules.md" />
       </div>
     ),
   },

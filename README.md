@@ -98,9 +98,9 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000). 5 routes: `/` dashboard, `/
 
 3-minute walkthrough of reflect catching real drift in a real refactor session — recorded during the hackathon, no synthetic data.
 
-[▶ Watch the demo](https://youtu.be/PLACEHOLDER-D5)
+*Video link will be posted here as a v0.1.0-alpha.2 patch after the hackathon-week recording completes (deadline Sun 2026-04-26). For the submission itself, the video ships via the hackathon submission form.*
 
-The recording shows: a two-hour refactor session, three clustered reverts, the trigger firing, Opus 4.7's reflection panel, and the next turn visibly adjusting. Cost, cache hit rate, and reflection-useful-rate overlaid as text.
+The recording shows: a multi-turn refactor session, clustered reverts, the trigger firing, Opus 4.7's reflection panel, and the next turn visibly adjusting. Cost, cache hit rate, and reflection-useful-rate overlaid as text.
 
 ---
 

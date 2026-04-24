@@ -152,7 +152,7 @@ The roadmap is deliberately slow. Session-local is the v1 commitment; everything
 ## Install
 
 ```bash
-npm install @chanjoongx/reflect
+npm install @chanjoongx/reflect@alpha
 npx reflect init
 ```
 

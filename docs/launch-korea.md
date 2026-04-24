@@ -47,7 +47,7 @@ Session-local 입니다. Persistence 없습니다. 의도적입니다 — v1 은
 
 Boris Cherny 의 "4.7's biggest edge is long-running work" thesis 에 대응하는 tool 의 첫 시도입니다. stetkeep (정적 prevention) 과 composition 으로 쓰입니다.
 
-MIT. GitHub: chanjoongx/reflect. 설치: npm install @chanjoongx/reflect
+MIT. GitHub: chanjoongx/reflect. 설치: npm install @chanjoongx/reflect@alpha
 ```
 
 **Expected engagement**: 20-40 comments if picked by curator, 5-15 otherwise. High-quality commenters. Primary goal is "Korean Claude Code power-users know this exists."
@@ -73,7 +73,7 @@ v1 이 이 철학의 검증입니다. Phase 2 persistence 는 50 users × 10 ses
 
 해커톤 week 에 발견한 것: reflect 를 Markdown 에 regulatory literal (FinCEN $10,000) 시나리오로 테스트했더니, 의외로 Opus 4.7 이 pre-execution 에서 대부분의 contradiction 을 미리 차단했습니다. reflect 가 fire 할 필요가 없었습니다. 이게 **two complementary safety layers** 입니다 — Claude intrinsic (turn-visible contradiction) + reflect post-hoc (multi-turn accumulated pattern). 서로 보완적이고, 겹치지 않습니다.
 
-설치: `npm install @chanjoongx/reflect`. MIT. github.com/chanjoongx/reflect
+설치: `npm install @chanjoongx/reflect@alpha`. MIT. github.com/chanjoongx/reflect
 
 피드백 환영합니다. 특히 failure-mode report (reflect 가 fire 했는데 bad guidance 를 준 경우) 을 가장 감사히 받습니다.
 ```
@@ -92,7 +92,7 @@ v1 이 이 철학의 검증입니다. Phase 2 persistence 는 50 users × 10 ses
 
 session-local 이고 persistence 없어서 팀 tool 로 안 어울릴 수 있는데, 개인 세션에서는 유용하실 거예요. 특히 새벽에 /loop 돌려놓고 자고 일어나서 git diff 보다가 머리 잡는 경험 해보신 분이면.
 
-`npm install @chanjoongx/reflect` + `npx reflect init` 하시면 됩니다. github.com/chanjoongx/reflect
+`npm install @chanjoongx/reflect@alpha` + `npx reflect init` 하시면 됩니다. github.com/chanjoongx/reflect
 
 해커톤 출품작인데 honest gotchas README 에 다 적어뒀어요. 버그 발견하시면 issue 열어주세요.
 ```
@@ -174,7 +174,7 @@ Three design choices that differ from most of the space:
 
 Honest failure modes documented: cold-start sessions, intent-shift false triggers, regulatory domains. One hackathon-week finding: Claude's own pre-execution reasoning catches some cases before reflect can fire — complementary safety layers, not redundant.
 
-`npm install @chanjoongx/reflect`. MIT. Tutorial at github.com/chanjoongx/reflect/blob/main/docs/tutorial.md.
+`npm install @chanjoongx/reflect@alpha`. MIT. Tutorial at github.com/chanjoongx/reflect/blob/main/docs/tutorial.md.
 
 Source: github.com/chanjoongx/reflect
 ```

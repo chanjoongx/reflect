@@ -6,7 +6,9 @@
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
-    "typecheck": "tsc --noEmit"
+    "preview": "next build && next start -H 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\""
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

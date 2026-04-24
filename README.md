@@ -78,6 +78,20 @@ Disable per-session: `export REFLECT_DISABLED=1` (or in `.env`). Full walkthroug
 
 ---
 
+## Viewer (optional local dashboard)
+
+The repo also ships a localhost-only Next.js 16 dashboard at `/web/` that reads your `.reflect/` directory and renders session state, reflection history, and cross-session drift clusters. **It never deploys, never makes API calls, binds to `127.0.0.1`, and runs every file read through a PII redactor.**
+
+```bash
+npm run viewer        # build + serve production (recommended — low RAM)
+# or
+npm run viewer:dev    # Turbopack dev server with HMR (higher RAM on Windows)
+```
+
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). 5 routes: `/` dashboard, `/reflections`, `/patterns`, `/install`, `/roadmap`. If `.reflect/` is empty, synthetic fixtures in `web/fixtures/` drive the UI so every route renders on a fresh clone. Full notes in [`web/README.md`](web/README.md).
+
+---
+
 ## Demo
 
 3-minute walkthrough of reflect catching real drift in a real refactor session — recorded during the hackathon, no synthetic data.

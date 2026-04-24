@@ -74,6 +74,9 @@
     "reflect:log": "tsx bin/reflect.ts log",
     "test": "tsc --noEmit && node --test --import tsx 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
-    "mirror-check": "diff -rq commands/ .claude/commands/ && diff -rq agents/ .claude/agents/ && diff -rq hooks/ .claude/hooks/ --exclude=hooks.json"
+    "mirror-check": "diff -rq commands/ .claude/commands/ && diff -rq agents/ .claude/agents/ && diff -rq hooks/ .claude/hooks/ --exclude=hooks.json",
+    "viewer": "npm run preview --prefix web",
+    "viewer:dev": "npm run dev --prefix web",
+    "viewer:build": "npm run build --prefix web"
   }
 }

@@ -6,15 +6,38 @@ Localhost-only Next.js dashboard for visualizing your reflect session state and 
 
 ## Quick start
 
+**Recommended (low RAM — production server, demo-grade):**
+
 ```bash
 cd web
 npm install
-npm run dev
+npm run preview     # builds once, then serves at http://127.0.0.1:3000
+```
+
+**Development (HMR + auto-reload, but higher RAM footprint):**
+
+```bash
+cd web
+npm install
+npm run dev         # Turbopack dev server — may use ~500MB-1GB on Windows
+```
+
+Or from the repository root:
+
+```bash
+npm run viewer      # same as: cd web && npm run preview
+npm run viewer:dev  # same as: cd web && npm run dev
 ```
 
 Open [http://127.0.0.1:3000](http://127.0.0.1:3000). If `.reflect/` in the parent directory is empty, the Viewer falls back to `fixtures/example-session/` so every route renders.
 
 To install and wire the reflect CLI itself (hooks, path-scoped rule, API key), follow `/install` in the Viewer or the root repository README.
+
+### RAM note
+
+Next.js 16 dev server uses Turbopack with multiple worker processes. On low-RAM Windows systems you may see up to ~1.5 GB used across ~10 `node` processes when running `npm run dev`. `npm run preview` builds once (short RAM spike, then released) and serves from the production build with a single `next start` process — typical steady-state ~100-200 MB. **For demo recording and general use, prefer `preview`.**
+
+To clean the build cache between runs: `npm run clean` (removes `.next/`).
 
 ## Routes
 

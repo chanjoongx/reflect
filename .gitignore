@@ -105,3 +105,15 @@ experiments/payloads/
 # npm artifacts (post-hackathon publish 가능성)
 *.tgz
 .npm/
+
+# /web/ — localhost-only Next.js viewer (do NOT deploy)
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel/
+web/.env
+web/.env.local
+web/.env.*.local
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo
+web/.turbo/

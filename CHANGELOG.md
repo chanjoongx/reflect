@@ -125,20 +125,61 @@ Built during *Built with Opus 4.7: a Claude Code Hackathon* (Cerebral Valley + A
 - ✅ New `hackathon/BRAIN-CHECKSUM.md` — cross-file spec consistency map (17 row Tier 1/2/3) + verification commands + self-limitations + v1.1 path
 - ✅ Cross-file consistency reconciled (10 axis): DOGFOOD count / Cost figures / Cache hit / output_config.effort / Auto mode / Managed Agents Option B / Ablation A/B scenarios / D4 morning commits / ACCEPTANCE 19/30 / D5 deferrals
 
-### Honest gaps (D4 late AM)
+#### D4 catch-up second-pass (post-push, 1 commit pushed)
+- ✅ `ec3cd2e` — 21 un-swept .md file audit (root + docs + .claude + commands + agents + experiments) + 5 critical fix (CHANGELOG + docs/measurements + docs/api-cost-economics + docs/reflection-prompt-design + experiments/ablation-components)
 
-- ⏳ Ablation Run 1/2 proceed/skip decision pending (user)
-- ⏳ DOGFOOD entries 4 → target 12 (gap 8, D4 afternoon/D5 morning bulk session)
-- ⏳ FAILURE-MODES Scenarios 2/3 real-session (D4 afternoon if skip OR D5 morning if Path A)
-- ⏳ Demo dry-run ×1-3 (D4 evening)
-- ⏳ Demo recording (D5 9-12 PT)
-- ⏳ Submission form (D6 14-16 PT, 5 PM PT deadline)
-- ⏳ npm publish (post-hackathon decision)
+#### D4 catch-up third-pass final (1 commit pushed)
+- ✅ `314f858` — .gitignore review + 3 safety-net entries (.claude/projects/ for PII, *.tgz, .npm/)
 
-### Status: pre-alpha, hackathon D4 late AM (working code, 4 commits pushed `01ed845`)
+#### D4 afternoon — Ablation-drop pivot (1 commit pushed)
+- ✅ `0d6e8d1` — Ablation 1+2 deferred to v1.1 with unified methodological decision-log at top of `experiments/ablation-with-without.md` + companion note in `ablation-components.md`. Rationale: vibecoding workflow mismatches revert-per-hour metric + same-task assumption breaks + N=2 self-experiment unfalsifiable + 6h opportunity cost > qualitative evidence ROI
+- ✅ Cascaded across 9 hackathon/*.md: EXECUTION-PLAN D4 header + NEXT_SESSION D5 rewrite + DEMO-SCRIPT Scenario B single-path + ACCEPTANCE-MATRIX T1 recast + BRAIN-CHECKSUM T3.2 RESOLVED + SUBMISSION-WRITEUP 3 fills + COST-REPORT D4 revised + SUBMISSION-CHECKLIST §9 updated + PII-AUDIT incident log + DOGFOOD F4 dev-finding
+- ✅ `.env REFLECT_DISABLED=1` removed → reflect ON for remainder of week
 
-**Acceptance**: 19/30 fully + 4 partial = ~21/30 effective. D5 25 + D6 28 target achievable.
-**Cumulative cost**: D3 EOD $18.78 / $500. D4 estimate +$29-39.
+#### D4 evening — /web/ Viewer build (3 commits pushed)
+- ✅ `decca11` — Localhost-only Next.js 16 Viewer (5 routes: /, /reflections, /patterns, /install, /roadmap). 58 files, 4139 insertions. Built via 6-Lab parallel agent dispatch. Stack: Next.js 16.2.4 + React 19.2.4 + Tailwind v4 + framer-motion. Security: `next dev -H 127.0.0.1`, CSP, server-only file reads, static filename allowlist, PII redactor on every read, rehype-sanitize markdown
+- ✅ `639fe6a` — Added `npm run viewer` root alias (build+prod mode, RAM-safe) + `viewer:dev` (dev mode, RAM-heavy)
+- ✅ `53e75ca` — CSP dev-mode fix (unsafe-eval + ws) for Turbopack HMR — React Fast Refresh compatibility
+- ✅ **E2E verified D4 10:18 PT on CJ live session** — 3× `git restore README.md` → cum_x100 0→100→200→fire+reset+cooldown5 → session-guidance.md generated → Opus 4.7 correctly identified "manual bypass, empty diff, not user pushback" + FT-high safety net engaged. **DOGFOOD Entry #005 (first organic hook fire, not smoke test)**
+
+### D5 Progress (2026-04-25 — partial, D6 ongoing)
+
+#### D5 — Scenarios 2/3 real-session + DEMO-SCRIPT fill + Korean-to-English translation (1 commit pushed)
+
+- ✅ **Scenario 2 (FAILURE-MODES §2) real-session — FIRE at T5, FT:high confirmed** (DOGFOOD #006)
+  - Session `e9d9fca8-...`, cum climbed 0 → 50 (T3 "Wait,") → 150 → 200 (T5 "No,") → 300 → **FIRE** at T5 PostToolUse
+  - Reflection output: causal pattern + question-framed adjustment + confidence medium (honest under-claim) + FT **high**
+  - Cost $0.0647 cold, latency 5296ms
+  - **NEW finding (v0.2 roadmap)**: path-scoped rule delivery gap — guidance file generated correctly but not auto-loaded for root-level files. `.claude/rules/reflect-rules.md` targets `src/**, lib/**, app/**, packages/**` only; README.md is repo-root → rule auto-load did not trigger → Claude did not read `.reflect/session-guidance.md`. **Delivery gap, not content gap.** Fix candidates: broader rule scope, session-start banner when session-guidance.md exists, Claude Code native "latest guidance" surface
+  - Bonus: Claude cited reflect mechanism during T6 (read README.md during T1) — self-aware harness demo narrative material
+- ✅ **Scenario 3 (FAILURE-MODES §3) real-session — BLOCKED by Claude pre-execution reasoning** (DOGFOOD #007)
+  - Session `5843868a-...`, hook never fired (cum=50 end, Tier 3 "Wait," only). Claude (Opus 4.7) refused 4 of 7 prompts before tool execution:
+    - T2: "Markdown has no $THRESHOLD interpolation — extracting literal makes doc factually wrong"
+    - T3/T5/T7: "git restore would wipe the literal you just said to keep — contradiction"
+  - Root cause: Scenario 3 design flaw — Markdown file target made env-var extraction semantically meaningless; T2 refusal cascaded to subsequent contradiction detections
+  - **Unexpected finding**: "Two complementary safety layers" narrative
+    - Layer 1 = Claude intrinsic pre-execution reasoning (catches turn-visible contradictions, semantic mismatches)
+    - Layer 2 = reflect post-hoc metacognition (catches multi-turn-only accumulated patterns)
+    - Scenario 2 demonstrated Layer 2; Scenario 3 accidentally revealed Layer 1. Complementary, not redundant
+  - Domain-awareness test deferred to v1.1 with specific rerun plan (real code fixture `experiments/fixtures/kyc-validator.ts`, internally consistent sequence)
+- ✅ DEMO-SCRIPT 02:00-02:30 `[N]` placeholder filled with actual counts: **6 reflections total** (1 changed next move, 1 blocked by delivery gap, 4 smoke tests + 1 complementary-layers scenario)
+- ✅ DOGFOOD #006 + #007 + F4 dev-finding all filled
+- ✅ FAILURE-MODES §2 + §3 real-session 실험 결과 blocks filled + experiment-design caveats added (honest framing of prompt-injection concerns)
+- ✅ `587d7bc` — Korean-drift-to-English translation pushed (CHANGELOG D2-D4 progress + docs footers + src/opus-reflection critical comment + .gitignore 4 lines). **GitHub repo text files 100% English verified** (ripgrep `[가-힣]` = 0 matches across git ls-files)
+- ✅ README.md working tree restored clean post-Scenario-3
+
+### Honest gaps (D5 afternoon, D6 remaining)
+
+- ⏳ Demo recording + edit + PII scrub + YouTube unlisted upload (D6 morning/afternoon)
+- ⏳ SUBMISSION-WRITEUP Demo URL fill + Problem Statement final + How-heard final (D6 afternoon)
+- ⏳ Submission form (D6 15:30-17:00 PT, 5 PM PT deadline)
+- ⏳ Michal session attendance if possible (D6, timing TBD)
+- ⏳ npm publish (post-hackathon decision, not submission blocker)
+
+### Status: pre-alpha, hackathon D5 afternoon (working code + Viewer + 2 real-session experiments + all repo text files English, 11 D4 + 1 D5 commits all pushed `587d7bc`)
+
+**Acceptance**: ~22-23/30 fully + 3 partial effective (C1 Scenario 2 real-session done w/ FT:high + Scenario 3 complementary-layers finding documented; C3/T4 DOGFOOD 7 real entries + 4 dev findings = 11 total, close to 12 target; D6 recording pushes to 25+).
+**Cumulative cost**: D3 EOD $18.78 / $500. D4 actual ~$25-35 (console reconciliation pending). D5 so far ~$1-2 (Scenario 2 reflect fire $0.0647 + Claude Code sessions ~$1.18). Well under budget with ~$450+ remaining.
 **Submission**: 2026-04-26 5:00 PM PT to *Built with Opus 4.7: a Claude Code Hackathon*.
 
 ---

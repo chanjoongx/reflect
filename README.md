@@ -51,11 +51,11 @@ Cold call ≈ $0.05 · warm call ≈ $0.01 (95% L1 cache hit observed D2) · lat
 ## Install
 
 ```bash
-npm install @chanjoongx/reflect@alpha
+npm install @chanjoongx/reflect
 npx reflect init      # prints the 4 manual setup steps (auto-wire is v1.1)
 ```
 
-> Published under the scoped name `@chanjoongx/reflect` on npm under the `alpha` tag (current version `0.1.0-alpha.1`). The binary stays `reflect` (so `npx reflect ...` works unchanged). The `@alpha` suffix is required because no `latest` tag is published yet — this avoids users accidentally installing alpha via bare `npm install` before v1 stabilizes. When `0.1.0` stable ships, install will become `npm install @chanjoongx/reflect` with no suffix. The unscoped `reflect` name is taken by a pre-existing JavaScript parser; scoping keeps the CLI identity clear and avoids name collision.
+> Published under the scoped name `@chanjoongx/reflect` (current version `0.1.0`). The binary stays `reflect` (so `npx reflect ...` works unchanged). The unscoped `reflect` name is taken by a pre-existing JavaScript parser; scoping keeps the CLI identity clear and avoids name collision. v1 is hackathon-week build — expect rough edges. Path-scope delivery gap (root-level files) is a known limitation — see `<details>` "Honest gotchas" below; v0.2 fix planned.
 
 The v1 `init` prints copy-paste instructions; you manually:
 

@@ -26,7 +26,7 @@ const steps: Step[] = [
           Installs the CLI + plugin into your project. reflect is session-local —
           nothing runs outside this directory.
         </p>
-        <CopyBlock code="npm install @chanjoongx/reflect@alpha" />
+        <CopyBlock code="npm install @chanjoongx/reflect" />
       </div>
     ),
   },

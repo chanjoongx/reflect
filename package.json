@@ -12,11 +12,8 @@
   "bin": {
     "reflect": "dist/bin/reflect.js"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "files": [
     "dist/",
-    "bin/",
     "commands/",
     "agents/",
     "hooks/hooks.json",

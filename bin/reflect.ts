@@ -230,7 +230,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("0.1.0-alpha.1");
+    console.log("0.1.0");
     process.exit(0);
   }
 

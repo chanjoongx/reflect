@@ -12,7 +12,7 @@ body:
     attributes:
       label: reflect version
       description: Output of `npx reflect --version`
-      placeholder: "0.1.0-alpha.1"
+      placeholder: "0.1.0"
     validations:
       required: true
   - type: input

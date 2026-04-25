@@ -29,11 +29,6 @@ Session-local. No persistence. No team sync. No telemetry. The file is deleted a
 
 Two hooks watch for three tiers of revert signal. `PostToolUse` catches Tier 1 (`git revert`, `git restore`, `git checkout HEAD --` — weight 1.0) and Tier 2 (`rm`/`unlink` of a user file, build-artifact paths excluded — weight 0.7). `UserPromptSubmit` catches Tier 3 (utterance negation like "no wait", "undo that" — weight 0.5). Weights accumulate as `cum_x100` (integer × 100, so shell arithmetic needs no `bc`). When cumulative weight crosses 240, a single-shot Opus 4.7 call fires; the hook exits in ≤50 ms while the API call runs in the background via `nohup`.
 
-![Reflect signal flow](docs/diagrams/architecture.svg)
-
-<details>
-<summary><b>Mermaid source</b> — renders natively on GitHub with zoom/theme; this <code>&lt;details&gt;</code> block is collapsed by default to keep the visual lean</summary>
-
 ```mermaid
 flowchart LR
   A[Tool call] --> H{Revert signal?}
@@ -48,6 +43,11 @@ flowchart LR
   API --> G[.reflect/session-guidance.md]
   G -. path-scoped rule auto-load .-> N[Next turn adjusts]
 ```
+
+<details>
+<summary>Static SVG version of the diagram above — for npm.com and other viewers that don't render Mermaid</summary>
+
+![Reflect signal flow](docs/diagrams/architecture.svg)
 
 </details>
 

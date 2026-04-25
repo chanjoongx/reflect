@@ -1,4 +1,5 @@
 ---
+name: brain-reflect
 description: Manually trigger reflect — a session-local metacognition reflection on recent tool calls.
 argument-hint: "[scope: session|recent]"
 ---

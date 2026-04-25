@@ -6,6 +6,36 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.1.2] — 2026-04-25
+
+### Fixed (post 9-agent exhaustive audit — root docs / docs folder / source code / hooks / plugin manifest / web Viewer / experiments / CI infra / hackathon docs / live npm registry vs repo)
+- `SECURITY.md` email contact: `cj@stetkeep.com` → `cj@chanjoongx.com` (consistency with PRIVACY.md and CODE_OF_CONDUCT.md; both `cj@*.com` are public-facing but unifying for clarity)
+- `SECURITY.md` supported-versions table: dropped misleading `(alpha)` label (we ship `0.1.x` stable, not alpha — see `[0.1.0]` pivot below)
+- `SECURITY.md` `npm view` example: scoped name `@chanjoongx/reflect`
+- `.claude-plugin/plugin.json` version: stale `0.1.0` → `0.1.2` (was missed in `[0.1.1]` patch — Claude Code plugin marketplace would have shown wrong version)
+- `bin/reflect.ts` `--version` output: hardcoded `0.1.0` → `0.1.2` (matches `package.json` version)
+- `bin/reflect.ts` `cmdStatus` typing: `let state: any` → `let state: ShellState | null` with proper inline type matching the on-disk shape (shell hooks write flat `cum_x100`, not the `SessionState.signals` array — that's reference-impl only)
+- `bin/reflect.ts` `cmdStatus` output: `signals_in_window: N` (wrong shape, would always print 0 since shell-written state has no `signals` key) → `cum_x100: N / 240 threshold` (matches production state shape and is far more useful for users running `npx reflect status`)
+- `package-lock.json` root version field drift (was `0.1.0` after `[0.1.1]` patch since `npm install` wasn't re-run — would not have broken `npm ci` but is now properly synced to `0.1.2`)
+- `.github/ISSUE_TEMPLATE/bug.yml` version placeholder: `0.1.0` → `0.1.2`
+- `web/components/Nav.tsx`: Roadmap route link added — `/roadmap` page existed but was reachable only via direct URL, not Nav (4 of 5 documented routes were navigable)
+- `commands/brain-reflect.md` + `.claude/commands/brain-reflect.md` (mirror): added explicit `name: brain-reflect` to frontmatter (was relying on filename inference; explicit declaration is more defensive)
+- `docs/getting-started.md`: install description removed hardcoded `current release 0.1.0` — now points to `CHANGELOG.md` so future patches don't drift the doc
+
+### Internal — 9-agent audit
+- Root public docs (Agent A): 1 BLOCKER (email mismatch fixed) + minors (cache hit rounding accepted as intentional `≈ 95%` vs measured `95.9%`)
+- docs folder (Agent B): 1 MAJOR (getting-started version, fixed) + cross-doc consistency verified across 16 axes
+- Source code (Agent C): 1 MAJOR (`state: any`, fixed) + 1 MINOR (version output, fixed) + spec-code alignment 98% (TODO retry-with-backoff, ablation roadmap intentional)
+- Hooks (Agent D): bash/PowerShell parity verified across 4 hook files; security minor (UUID-bounded SESSION_ID, defensive escape deferred to v0.2)
+- Plugin/agents/commands/mirror (Agent E): 1 BLOCKER (plugin.json version, fixed) + 1 MINOR (frontmatter name, fixed) + mirror byte-identity verified
+- Web Viewer (Agent F): 1 MINOR (Nav Roadmap, fixed) + security/type/fallback/PII all clean
+- Experiments (Agent G): 0 issues; decision-logs hold up to skeptical review
+- CI/infra (Agent H): 1 BLOCKER (lockfile drift, fixed) + 1 MINOR (bug.yml, fixed)
+- Hackathon docs (Agent I): 1 MAJOR (EXECUTION-PLAN header HEAD stale, fixed) — internal only, not in npm tarball
+- Live npm registry vs repo (Agent J): published 0.1.1 verified via `npm view`, gitHead matches, lockfile drift is the only repo-side issue (now resolved here)
+
+False positives correctly identified by validation: 2 (PRIVACY.md timestamp — content unchanged so timestamp legitimate; README cache hit `≈95%` — uses approximation symbol, intentional rounding from measured 95.9%).
+
 ## [0.1.1] — 2026-04-24
 
 ### Added

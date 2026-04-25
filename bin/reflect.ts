@@ -74,9 +74,17 @@ async function cmdInit(_projectDir: string): Promise<void> {
 
 async function cmdStatus(projectDir: string): Promise<void> {
   const stateFile = path.join(projectDir, ".reflect", "state.json");
-  let state: any = null;
+  // Shell hook writes flat cum_x100 (not the SessionState.signals array — that
+  // shape is reference-impl only). Type for the actual on-disk shape:
+  type ShellState = {
+    session_id?: string;
+    turn_count?: number;
+    cum_x100?: number;
+    cooldown_remaining?: number;
+  };
+  let state: ShellState | null = null;
   try {
-    state = JSON.parse(await fs.readFile(stateFile, "utf8"));
+    state = JSON.parse(await fs.readFile(stateFile, "utf8")) as ShellState;
   } catch {
     console.log("reflect: no active session state (no triggers fired yet)");
     return;
@@ -85,7 +93,7 @@ async function cmdStatus(projectDir: string): Promise<void> {
   console.log(`reflect status`);
   console.log(`  session_id:         ${state.session_id || "(none)"}`);
   console.log(`  turn_count:         ${state.turn_count ?? 0}`);
-  console.log(`  signals_in_window:  ${(state.signals?.length ?? 0)}`);
+  console.log(`  cum_x100:           ${state.cum_x100 ?? 0} / 240 threshold`);
   console.log(`  cooldown_remaining: ${state.cooldown_remaining ?? 0}`);
 
   const guidance = await readGuidance(projectDir);
@@ -230,7 +238,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("0.1.0");
+    console.log("0.1.2");
     process.exit(0);
   }
 

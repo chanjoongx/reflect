@@ -7,6 +7,7 @@ const routes: NavRoute[] = [
   { href: "/reflections", label: "Reflections" },
   { href: "/patterns", label: "Patterns" },
   { href: "/install", label: "Install" },
+  { href: "/roadmap", label: "Roadmap" },
 ];
 
 export function Nav() {

@@ -21,7 +21,7 @@ cd /path/to/your-project
 npm install @chanjoongx/reflect
 ```
 
-This installs `@chanjoongx/reflect@0.1.0` (current release) and its dependency `stetkeep` (used internally for path-scoped rule auto-loading). The binary is `reflect` so `npx reflect ...` works unchanged. Scoped name because the unscoped `reflect` on npm is an older JavaScript parser package; v1 is hackathon-week build — `0.x` semver explicitly signals "expect changes before 1.0".
+This installs `@chanjoongx/reflect` (current version: see [CHANGELOG.md](../CHANGELOG.md)) and its dependency `stetkeep` (used internally for path-scoped rule auto-loading). The binary is `reflect` so `npx reflect ...` works unchanged. Scoped name because the unscoped `reflect` on npm is an older JavaScript parser package; v1 is hackathon-week build — `0.x` semver explicitly signals "expect changes before 1.0".
 
 ---
 

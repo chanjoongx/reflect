@@ -4,15 +4,15 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.x (alpha) | ✅ |
+| 0.1.x | ✅ |
 
 ## Reporting a vulnerability
 
-Email **cj@stetkeep.com** with a subject starting with `[security]`. Include:
+Email **cj@chanjoongx.com** with a subject starting with `[security]`. Include:
 
 - A clear description of the vulnerability
 - Steps to reproduce (or a minimal proof of concept)
-- The affected version (`npm view reflect version` or git commit SHA)
+- The affected version (`npm view @chanjoongx/reflect version` or git commit SHA)
 - Your preferred disclosure timeline
 
 You will receive an acknowledgment within **72 hours**. Critical issues are patched with priority; we aim to publish a fix within 14 days of acknowledgment when feasible.

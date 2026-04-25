@@ -77,13 +77,32 @@ The v1 `init` prints copy-paste instructions; you manually:
 npx reflect status      # verify hooks wired, API key present, last trigger
 ```
 
-First reflection fires automatically once cumulative revert weight crosses the threshold. Manual trigger:
+Full walkthrough: [`docs/getting-started.md`](docs/getting-started.md). Common issues: [`docs/troubleshooting.md`](docs/troubleshooting.md).
+
+---
+
+## Usage
+
+After install, reflect runs **silently in the background**. There's nothing to type day-to-day — the hook watches your tool calls and fires Opus 4.7 only when 3+ revert signals cluster within 10 turns.
+
+You'll know it fired when `.reflect/session-guidance.md` appears (or refreshes) in your project. The next turn auto-loads it via the path-scoped rule and adjusts.
+
+```bash
+npx reflect status         # state, last trigger, cum_x100 vs threshold
+```
 
 ```
-/brain-reflect
+/brain-reflect             # manual trigger from inside Claude Code (bypasses cooldown)
 ```
 
-Disable per-session: `export REFLECT_DISABLED=1` (or in `.env`). Full walkthrough: [`docs/getting-started.md`](docs/getting-started.md). Common issues: [`docs/troubleshooting.md`](docs/troubleshooting.md).
+```bash
+export REFLECT_DISABLED=1  # disable for current shell session
+# or set REFLECT_DISABLED=1 in .env for the whole project
+```
+
+Open the optional [Viewer](#viewer-optional-local-dashboard) for a real-time dashboard of session state + reflection history + cross-session drift clusters.
+
+That's it. No daily commands, no configuration once installed. Reflect stays out of the way until something needs your attention.
 
 ---
 

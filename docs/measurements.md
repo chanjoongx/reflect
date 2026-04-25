@@ -120,4 +120,4 @@ D5 also surfaced an unexpected architectural finding via Scenario 3: **two compl
 
 ---
 
-**Last updated**: 2026-04-24 D5 afternoon PT (16 commits pushed `70f38ab`). D2 measurements + D5 Scenario 2 measurements both from real sessions. Ablation data deferred to v1.1 (N ≥ 30 across 5+ users) per `experiments/ablation-with-without.md` decision-log — single-subject n-of-1 case studies in this hackathon are explicitly framed as "honest small numbers, not controlled trial."
+**Last updated**: 2026-04-25 D5 evening PT (**23 commits pushed `c4ee0af`** — npm `@chanjoongx/reflect@0.1.2` LIVE on registry). D2 measurements + D5 Scenario 2 measurements both from real sessions. Ablation data deferred to v1.1 (N ≥ 30 across 5+ users) per `experiments/ablation-with-without.md` decision-log — single-subject n-of-1 case studies in this hackathon are explicitly framed as "honest small numbers, not controlled trial."

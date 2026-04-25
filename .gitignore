@@ -102,9 +102,10 @@ experiments/payloads/
 # Claude Code conversation transcripts (safety net — normally at ~/.claude/projects/, but if repo-local .claude/projects/ created, contains PII: user prompts + Claude responses)
 .claude/projects/
 
-# npm artifacts (post-hackathon publish possibility)
+# npm artifacts + auth tokens
 *.tgz
 .npm/
+.npmrc
 
 # /web/ — localhost-only Next.js viewer (do NOT deploy)
 web/node_modules/

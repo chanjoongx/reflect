@@ -1,0 +1,12 @@
+flowchart LR
+  A[Tool call] --> H{Revert signal?}
+  U[User prompt] --> H2{Utterance negation?}
+  H -->|T1 +100 or T2 +70| S[cum_x100 += weight]
+  H2 -->|T3 +50| S
+  S --> D{cum_x100 ≥ 240?}
+  D -->|no| E[exit 0]
+  D -->|yes| R[nohup bin/reflect.ts trigger]
+  R --> P[3-layer prompt<br/>L1 1h · L2 5m · L3 ephemeral]
+  P --> API[claude-opus-4-7<br/>thinking.adaptive<br/>output_config.effort=high]
+  API --> G[.reflect/session-guidance.md]
+  G -. path-scoped rule auto-load .-> N[Next turn adjusts]

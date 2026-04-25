@@ -6,6 +6,42 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.1.1] — 2026-04-24
+
+### Added
+- `docs/diagrams/architecture.svg` — static SVG flowchart for npm.com and other markdown viewers without Mermaid support. Generated via kroki.io public render service from the same Mermaid source.
+- `docs/diagrams/architecture.mmd` — Mermaid source backup (single source of truth for both the README codeblock and the SVG).
+- `.gitignore`: `.npmrc` defense layer (prevents publish-token leakage if a user puts a token there during local publishing).
+
+### Changed
+- `README.md` How-it-works section: SVG image embedded inside a collapsed `<details>` block as a fallback for npm.com / non-Mermaid viewers. The Mermaid codeblock remains the default rendering on GitHub (preserves native theme + zoom + interactive layout).
+- `README.md` install paragraph: removed the hardcoded "current version `0.1.0`" — points to CHANGELOG.md instead, so future patches don't drift README.
+
+### Internal
+- No runtime code changes. `dist/` is regenerated from the same TypeScript source as `0.1.0`.
+- Tarball remains ~62.5 kB, 45 files (no functional surface added).
+
+## [0.1.0] — 2026-04-24
+
+### First npm publish
+- `@chanjoongx/reflect@0.1.0` published to npm registry: scoped, public, `latest` tag.
+- 45 files, ~62.5 kB packed / ~203 kB unpacked.
+- Bare `npm install @chanjoongx/reflect` works (matches sister package `stetkeep@0.4.6` install pattern).
+
+### Pivot from prerelease label
+- Initially scaffolded as `0.1.0-alpha.1` (D1 baseline). Pre-publish review: pivoted to `0.1.0` after observing that `stetkeep` (sister npm package by same author) ships bare, and that `0.x` semver itself already signals "expect changes before 1.0" — making the explicit `-alpha.N` suffix redundant honesty + adding install-command friction (`@alpha` tag required for prerelease).
+- All install commands across README, docs, and Viewer install page updated to bare `npm install @chanjoongx/reflect`.
+
+### Pre-publish hardening
+- 5 missing files added to `package.json` `files` field: `.env.example`, `.claude/settings.example.json`, `.claude/rules/reflect-rules.md`, `hooks/reflect-utterance.{sh,ps1}`. Without these, README's post-install copy instructions would silently fail.
+- Removed `main` and `types` fields (CLI-only package; pointing to non-existent `dist/index.js` would have been misleading).
+- Removed `bin/` from `files` field (kept `dist/` only — no need to ship the TypeScript source duplicate of `dist/bin/reflect.js`).
+- Korean-language drift in 6 tracked files translated to English (CHANGELOG entries + docs footers + `src/opus-reflection.ts` critical comment + `.gitignore` section headers). GitHub text files now 100% English (`ripgrep` Hangul range = 0 matches across `git ls-files`).
+
+### See [0.1.0-alpha.1] section below for full D1-D5 build progress.
+
+---
+
 ## [0.1.0-alpha.1] — 2026-04-21
 
 ### Added — initial scaffold (hackathon D1)

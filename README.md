@@ -62,7 +62,7 @@ npm install @chanjoongx/reflect
 npx reflect init      # prints the 4 manual setup steps (auto-wire is v1.1)
 ```
 
-> Published under the scoped name `@chanjoongx/reflect` (current version `0.1.0`). The binary stays `reflect` (so `npx reflect ...` works unchanged). The unscoped `reflect` name is taken by a pre-existing JavaScript parser; scoping keeps the CLI identity clear and avoids name collision. v1 is hackathon-week build — expect rough edges. Path-scope delivery gap (root-level files) is a known limitation — see `<details>` "Honest gotchas" below; v0.2 fix planned.
+> Published under the scoped name `@chanjoongx/reflect`. See [`CHANGELOG.md`](CHANGELOG.md) for the current version. The binary stays `reflect` (so `npx reflect ...` works unchanged). The unscoped `reflect` name is taken by a pre-existing JavaScript parser; scoping keeps the CLI identity clear and avoids name collision. v1 is hackathon-week build — expect rough edges. Path-scope delivery gap (root-level files) is a known limitation — see `<details>` "Honest gotchas" below; v0.2 fix planned.
 
 The v1 `init` prints copy-paste instructions; you manually:
 

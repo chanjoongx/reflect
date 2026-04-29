@@ -29,5 +29,5 @@
     "types": ["node"]
   },
   "include": ["bin/**/*.ts", "src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "build", "**/*.test.ts", "experiments/**", "hackathon/**"]
+  "exclude": ["node_modules", "dist", "build", "**/*.test.ts", "experiments/**", "hackathon/**", "src/example/**"]
 }

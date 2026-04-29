@@ -6,6 +6,33 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.1.4] — 2026-04-29
+
+### Fixed (post 8-agent parallel audit)
+
+- **`.github/ISSUE_TEMPLATE/config.yml`**: security contact email `cj@stetkeep.com` → `cj@chanjoongx.com` (consistency with SECURITY.md, PRIVACY.md, CODE_OF_CONDUCT.md — all other surfaces use `cj@chanjoongx.com`).
+- **`.gitignore`**: added explicit `.env.production`, `.env.staging`, `.env.test`, `.env.development` entries to plug the gap left by `.env.*.local`. Without this, a dev creating `.env.production` with credentials would have been tracked.
+- **`tsconfig.json`**: added `src/example/**` to `exclude` array. The D6 dogfood baseline `src/example/dummy.ts` was being compiled into `dist/src/example/dummy.{js,d.ts,d.ts.map,js.map}` and shipped in 0.1.3 tarball as a non-functional artifact (4 surplus files). Now excluded from the build → tarball production-clean.
+- **`src/opus-reflection.ts`**: API call now uses `config.effort` (driven by `REFLECT_EFFORT` env var) instead of hardcoded `"high"`. The env var was documented in CLI help (`reflect --help`) but ignored at request time — silent override bug.
+- **`docs/getting-started.md`**: Steps 2/3/4 install paths updated from `node_modules/reflect/...` (unscoped) → `node_modules/@chanjoongx/reflect/...` (scoped). The unscoped paths would have failed for users following docs literally since the package name is scoped.
+- **`ARCHITECTURE.md`** §5 cost section: cold $0.049 → $0.0486 (precision match to `docs/measurements.md`), theoretical $0.093 → $0.095 (math match to `docs/api-cost-economics.md`). Eliminates the cross-file drift a thorough reviewer would spot in 30s.
+- **`README.md`** how-it-works cost line: explicit `(measured D2)` labels added for both cold and warm; cache hit refined to `95.9% L1 cache hit` (was rounded to `95%` without the precise cite).
+- **`bin/reflect.ts`** `cmdManual`: now calls `pruneOldEntries()` at trigger entry when log is enabled. The 168h auto-prune contract documented in `src/logger.ts` is now enforced in code (was previously only callable via `reflect log --prune`, contradicting docs claim of "called on session start").
+- **`src/logger.ts`**: comment block on `next_turn_acted_on_adjustment` and `next_turn_summary` fields clarifies that v1 reserves the schema; v1.1 wires the next-turn correlation tooling needed to compute the Phase 2 trigger condition.
+- **`docs/troubleshooting.md`**: "Manual /brain-reflect doesn't work" section now explicitly distinguishes plugin pattern (auto-detect via `.claude-plugin/plugin.json`) from standalone pattern (manual `cp` of `commands/` + `agents/` from `node_modules/@chanjoongx/reflect/`). Ends the documentation gap where standalone users had no path to install the slash command.
+
+### Internal
+
+- 5-surface version sync `0.1.3` → `0.1.4`: `package.json`, `package-lock.json` (root + `packages.""`), `.claude-plugin/plugin.json`, `bin/reflect.ts` `--version`, `.github/ISSUE_TEMPLATE/bug.yml` placeholder. Verified by the publish workflow's `Verify 5-surface version sync` step.
+- Tarball file count: 0.1.3 had 49 files (with 4 surplus dummy files); 0.1.4 ships 45 files (parity with 0.1.0–0.1.2 baseline) post `tsconfig.json` exclude.
+
+### Notes
+
+- 8-agent parallel audit perspectives: Boris (code) + Cat (production) + Thariq (cost consistency) + Lydia (DX) + Ado (OSS hygiene) + .gitignore specialist + doc cross-consistency + plugin spec compliance. 10 fixes from this round, plus 2 deferred to v0.2 (countTokens pre-flight, Windows native PowerShell hook routing).
+- `npm publish --provenance` continues via OIDC trusted publisher (set up for 0.1.3); 0.1.4 publish triggers the same SLSA v1 attestation pipeline.
+
+---
+
 ## [0.1.3] — 2026-04-29
 
 ### Changed

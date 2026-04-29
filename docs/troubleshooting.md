@@ -56,8 +56,21 @@ Check cumulative state: `cat .reflect/state.json` → `cum_x100`.
 - Raise `REFLECT_COOLDOWN_TURNS` to 10+
 
 ### Manual `/brain-reflect` doesn't work
-- Verify subagent installed: `ls .claude/agents/reflection-orchestrator.md`
-- Verify command installed: `ls .claude/commands/brain-reflect.md`
+
+The `/brain-reflect` slash command is registered when Claude Code can find the plugin's `commands/brain-reflect.md`. Two install patterns:
+
+**(A) Plugin pattern** (Anthropic marketplace, or via `claude --plugin-dir`):
+- Plugin manifest at `.claude-plugin/plugin.json` auto-detects `commands/`, `agents/`, and `hooks/hooks.json` from the plugin root — no manual `cp` to `.claude/` needed.
+- Local dev verify: `claude --plugin-dir ./node_modules/@chanjoongx/reflect`
+
+**(B) Standalone pattern** (default for npm install before marketplace install is available):
+- Copy the slash command + subagent into your project:
+  ```bash
+  mkdir -p .claude/commands .claude/agents
+  cp node_modules/@chanjoongx/reflect/commands/brain-reflect.md .claude/commands/
+  cp node_modules/@chanjoongx/reflect/agents/reflection-orchestrator.md .claude/agents/
+  ```
+- Verify: `ls .claude/commands/brain-reflect.md` and `ls .claude/agents/reflection-orchestrator.md`
 - Restart Claude Code (commands + agents load at session start)
 
 ---

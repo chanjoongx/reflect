@@ -182,8 +182,8 @@ Our layer plan:
 - Typical session triggers ≥3 times — easy ROI
 
 ### Cost per trigger (measured D2)
-- Cold (first call, L1=4,741 tok): ≈ $0.049 (≈ $0.093 theoretical without caching)
-- Warm (subsequent, L1 cache hit ≈ 95%): ≈ $0.009 (≈ $0.038 average, L1 1h + L2 5m)
+- Cold (first call, L1=4,741 tok): ≈ $0.0486 (≈ $0.095 theoretical without caching)
+- Warm (subsequent, L1 cache hit 95.9%): ≈ $0.0089 (≈ $0.038 average, L1 1h + L2 5m)
 
 Measured figures summarised in [`docs/measurements.md`](docs/measurements.md). Theoretical figures in [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
 

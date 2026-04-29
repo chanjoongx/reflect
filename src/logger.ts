@@ -24,7 +24,11 @@ export interface LogEntry {
     sum_weight: number;
     signal_tiers: number[];
   };
-  // Filled in next turn (correlation):
+  // Reserved schema fields for next-turn correlation.
+  // v1: not yet wired — no code path sets these. Useful rate computed via
+  //     computeUsefulRate() will report 0 until v1.1 ships the correlation
+  //     tooling. Phase 2 trigger condition (50 users × 10 sessions, useful
+  //     rate > 60%) requires this to be measurable; planned for v1.1.
   next_turn_acted_on_adjustment?: boolean | undefined;
   next_turn_summary?: string | undefined;
 }

@@ -28,7 +28,7 @@ This installs `@chanjoongx/reflect` (current version: see [CHANGELOG.md](../CHAN
 ## Step 2 — Set up your API key
 
 ```bash
-cp node_modules/reflect/.env.example .env
+cp node_modules/@chanjoongx/reflect/.env.example .env
 # Edit .env and replace the placeholder with your actual Anthropic API key
 ```
 
@@ -40,7 +40,7 @@ Add `.env` to your `.gitignore` if it isn't already.
 
 ```bash
 mkdir -p .claude
-cp node_modules/reflect/.claude/settings.example.json .claude/settings.json
+cp node_modules/@chanjoongx/reflect/.claude/settings.example.json .claude/settings.json
 ```
 
 If `.claude/settings.json` already exists (from other tooling), merge the `hooks.PostToolUse` block manually instead of overwriting.
@@ -56,7 +56,7 @@ powershell -File $CLAUDE_PROJECT_DIR/.claude/hooks/reflect-trigger.ps1
 
 ```bash
 mkdir -p .claude/rules
-cp node_modules/reflect/.claude/rules/reflect-rules.md .claude/rules/
+cp node_modules/@chanjoongx/reflect/.claude/rules/reflect-rules.md .claude/rules/
 ```
 
 This file declares that when Claude reads files in `src/**`, `lib/**`, `app/**`, or `packages/**`, it should auto-load `.reflect/session-guidance.md` if it exists.

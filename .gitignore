@@ -12,6 +12,10 @@
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
+.env.test
+.env.development
 *.key
 *.pem
 secrets.json

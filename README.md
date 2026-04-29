@@ -51,7 +51,7 @@ flowchart LR
 
 </details>
 
-Cold call ≈ $0.05 · warm call ≈ $0.01 (95% L1 cache hit observed D2) · latency 5–6 s, non-blocking. Detailed architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md). Protocol spec: [`REFLECT.md`](REFLECT.md). Cost math: [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
+Cold call ≈ $0.05 (measured D2) · warm call ≈ $0.01 (measured D2, 95.9% L1 cache hit) · latency 5–6 s, non-blocking. Detailed architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md). Protocol spec: [`REFLECT.md`](REFLECT.md). Cost math: [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
 
 ---
 

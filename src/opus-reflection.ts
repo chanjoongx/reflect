@@ -71,7 +71,7 @@ export async function callOpusReflection(
       display: "summarized" as const,
     },
     output_config: {
-      effort: "high" as const,
+      effort: config.effort,
     },
     system: [
       {

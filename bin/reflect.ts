@@ -117,6 +117,14 @@ async function cmdManual(projectDir: string, scope: TriggerScope): Promise<void>
     return;
   }
 
+  // Auto-prune session-log entries older than LOG_TTL_HOURS (168h) on every
+  // trigger entry. Cheap (file read + filter); ensures the documented TTL
+  // contract is enforced automatically rather than waiting for the user to
+  // run `reflect log --prune` manually.
+  if (config.logEnabled) {
+    await pruneOldEntries(projectDir);
+  }
+
   console.error(`[reflect] manual trigger — scope: ${scope}`);
 
   const [activeRules, sessionTaskSummary, recentToolCalls, rolledBackDiff] =
@@ -238,7 +246,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("0.1.3");
+    console.log("0.1.4");
     process.exit(0);
   }
 

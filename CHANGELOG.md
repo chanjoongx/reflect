@@ -6,6 +6,23 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.1.3] — 2026-04-29
+
+### Changed
+- `README.md`: removed `## Demo` section. Video URL stays out of the public README; demo link is reserved for marketplace and hackathon submission contexts (author privacy preference).
+- `README.md` "Why Opus 4.7 specifically" details block: `Ablation results: experiments/` → `Methodology + decision log: experiments/` — accurately describes what the `experiments/` folder contains (v1.1-deferred ablation decision log, not run results).
+- `commands/brain-reflect.md` (and `.claude/commands/brain-reflect.md` mirror): cost figures updated from theoretical (cold ~$0.09 / warm ~$0.04) to measured (cold ~$0.05 / warm ~$0.01, 95.9% L1 cache hit) — matches `README.md` and `docs/api-cost-economics.md`. Eliminates the cross-file inconsistency a marketplace reviewer would catch on cross-check.
+
+### Internal
+- 5-surface version sync `0.1.2` → `0.1.3`: `package.json`, `package-lock.json` (root + `packages.""`), `.claude-plugin/plugin.json`, `bin/reflect.ts` `--version` output, `.github/ISSUE_TEMPLATE/bug.yml` placeholder.
+- Plugin manifest verified against the official Claude Code plugin docs (`code.claude.com/docs/en/plugins`): `hooks/hooks.json` is auto-detected from the plugin root, so an explicit `hooks` field in `plugin.json` is not required. Current `commands` + `agents` arrays remain (they parallel the auto-detect pattern but are also valid as explicit declarations).
+- No runtime code changes. `dist/` regenerated from the same TypeScript source as `0.1.2`.
+
+### Notes
+- Prepares for Anthropic plugin marketplace submission (stetkeep parity in supply-chain hygiene). OIDC trusted publisher setup — for SLSA v1 provenance on the next publish — happens out-of-band before the actual `npm publish` of this version.
+
+---
+
 ## [0.1.2] — 2026-04-25
 
 ### Fixed (post 9-agent exhaustive audit — root docs / docs folder / source code / hooks / plugin manifest / web Viewer / experiments / CI infra / hackathon docs / live npm registry vs repo)

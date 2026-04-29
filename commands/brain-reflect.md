@@ -35,8 +35,8 @@ Invoke a manual reflection on the current Claude Code session. Bypasses the auto
 - `recent` — last 10 tool calls only (faster, cheaper)
 
 ## Cost
-- Cold call (first reflect of session): ~$0.09
-- Warm call (subsequent in same hour): ~$0.04
+- Cold call (first reflect of session): ~$0.05 (measured D2)
+- Warm call (subsequent in same hour): ~$0.01 (measured D2, 95.9% L1 cache hit)
 
 Cost details: `docs/api-cost-economics.md`.
 

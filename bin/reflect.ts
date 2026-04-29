@@ -238,7 +238,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("0.1.2");
+    console.log("0.1.3");
     process.exit(0);
   }
 

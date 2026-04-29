@@ -120,16 +120,6 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000). 5 routes: `/` dashboard, `/
 
 ---
 
-## Demo
-
-3-minute walkthrough of reflect catching real drift in a real refactor session — recorded during the hackathon, no synthetic data.
-
-*Video link will be posted here in a follow-up release after the hackathon-week recording completes (deadline Sun 2026-04-26). For the submission itself, the video ships via the hackathon submission form.*
-
-The recording shows: a multi-turn refactor session, clustered reverts, the trigger firing, Opus 4.7's reflection panel, and the next turn visibly adjusting. Cost, cache hit rate, and reflection-useful-rate overlaid as text.
-
----
-
 <details>
 <summary><b>Honest gotchas</b></summary>
 
@@ -167,7 +157,7 @@ The reflection task is **causal reasoning over context**, not pattern classifica
 - "Why did the user push back?"
 - "What pattern in my actions led to failure?"
 
-Smaller models flatten this — they emit generic advice ("be more careful"). Opus 4.7 holds the causal chain across 20+ tool calls + 2–3 rule documents and produces a reflection that reads like a thoughtful teammate post-mortem. Ablation results: [`experiments/`](experiments/).
+Smaller models flatten this — they emit generic advice ("be more careful"). Opus 4.7 holds the causal chain across 20+ tool calls + 2–3 rule documents and produces a reflection that reads like a thoughtful teammate post-mortem. Methodology + decision log: [`experiments/`](experiments/).
 
 </details>
 

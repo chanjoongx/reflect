@@ -1,5 +1,26 @@
 // src/revert-detector.ts — 3-tier revert signal taxonomy (REFERENCE IMPL)
 //
+// ┌──────────────────────────────────────────────────────────────────────┐
+// │ SUPERSEDED as of 2026-08-23. Kept because v0.1.4 ships it; do not    │
+// │ build on it.                                                         │
+// │                                                                      │
+// │ The taxonomy below was measured against 836 real turns and found to  │
+// │ detect NOTHING: Tier 1 fired 0 times in 30,609 tool calls and the    │
+// │ Tier 3 regex 0 times in 836 prompts, against 140 turns a reference   │
+// │ annotator labels as pushback. See bench/FINDINGS.md.                 │
+// │                                                                      │
+// │ Replacement, already written and tested:                             │
+// │   src/detect/structural.ts  — Stage A, language-free structural gate │
+// │   src/detect/judge.ts       — Stage C, relational correction judge   │
+// │   src/detect/lexical.ts     — these regexes, preserved verbatim as   │
+// │                               the B0/B1 benchmark baselines          │
+// │   src/transcript/parse.ts   — the (prior turn, prompt) pair          │
+// │                                                                      │
+// │ The five-way implementation drift this file's header describes below │
+// │ is resolved there: one TypeScript module, called directly by both    │
+// │ the bench and (in P1) the hook.                                      │
+// └──────────────────────────────────────────────────────────────────────┘
+//
 // ⚠ IMPLEMENTATION STATUS (D4 2026-04-24):
 //   This is a TypeScript reference implementation of the full 3-tier taxonomy.
 //   The PRODUCTION hook (hooks/reflect-trigger.sh / .ps1) does NOT call into this

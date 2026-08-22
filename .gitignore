@@ -122,3 +122,12 @@ web/.env.*.local
 web/next-env.d.ts
 web/tsconfig.tsbuildinfo
 web/.turbo/
+
+# bench corpus + labels — redacted, but still real user prompts. Local only.
+bench/data/
+# bench report.md quotes example prompts verbatim; results/ stays local too.
+# Aggregates are published through the Artifact surface, not through git.
+bench/results/
+evals/out/
+evals/out2/
+evals/__pycache__/

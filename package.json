@@ -77,11 +77,18 @@
     "reflect:manual": "tsx bin/reflect.ts manual --debug",
     "reflect:status": "tsx bin/reflect.ts status",
     "reflect:log": "tsx bin/reflect.ts log",
-    "test": "tsc --noEmit && node --test --import tsx 'src/**/*.test.ts'",
-    "typecheck": "tsc --noEmit",
-    "mirror-check": "diff -rq commands/ .claude/commands/ && diff -rq agents/ .claude/agents/ && diff -rq hooks/ .claude/hooks/ --exclude=hooks.json",
+    "test": "tsc --noEmit && tsc --noEmit -p bench/tsconfig.json && node --test --import tsx \"src/**/*.test.ts\" \"bench/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p bench/tsconfig.json",
+    "mirror-check": "diff -rq commands/ .claude/commands/ && diff -rq agents/ .claude/agents/ && diff -rq hooks/ .claude/hooks/ --exclude=hooks.json && diff -q src/redact.ts web/lib/redact.ts",
     "viewer": "npm run preview --prefix web",
     "viewer:dev": "npm run dev --prefix web",
-    "viewer:build": "npm run build --prefix web"
+    "viewer:build": "npm run build --prefix web",
+    "bench:extract": "tsx bench/extract.ts",
+    "bench:label": "tsx bench/label.ts",
+    "bench:score": "tsx bench/score.ts",
+    "bench:report": "tsx bench/report.ts",
+    "bench:review": "tsx bench/review.ts",
+    "bench": "npm run bench:extract && npm run bench:score && npm run bench:report",
+    "typecheck:bench": "tsc --noEmit -p bench/tsconfig.json"
   }
 }

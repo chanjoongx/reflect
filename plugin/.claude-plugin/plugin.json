@@ -1,6 +1,6 @@
 {
-  "name": "reflect",
-  "version": "0.2.2",
+  "name": "chanjoongx-reflect",
+  "version": "0.2.3",
   "description": "Notices when you keep pushing back on Claude Code, works out why, and tells the agent before its next step. Each of your messages is judged by Claude Haiku 5.5; when two land as pushback within six turns, Claude Opus 5.5 reads them and the agent receives a short note.",
   "author": {
     "name": "Chanjoong Kim",
@@ -13,7 +13,7 @@
   "supportUrl": "https://github.com/chanjoongx/reflect/issues",
   "privacyPolicyUrl": "https://github.com/chanjoongx/reflect/blob/main/plugin/PRIVACY.md",
   "license": "MIT",
-  "icon": "./icon.svg",
+  "icon": "./icon.png",
   "keywords": [
     "metacognition",
     "session-local",

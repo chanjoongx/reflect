@@ -26,7 +26,7 @@ export function ActiveGuidanceCard({ note, policy }: ActiveGuidanceCardProps) {
           <div className="flex flex-wrap items-center gap-2 border-t border-white/6 pt-4">
             <span className="text-[11px] text-white/45">Ask for one now with</span>
             <code className="rounded-md border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[11px] text-[var(--color-brand-purple)]">
-              /reflect:brain-reflect
+              /chanjoongx-reflect:brain-reflect
             </code>
           </div>
         </div>

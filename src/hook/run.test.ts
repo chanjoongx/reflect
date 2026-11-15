@@ -14,7 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 
-import { loadConfig, reflectForFire, runHook, withProjectEnv, type HookDeps, type HookInput } from "./run.js";
+import { loadConfig, reflectForFire, runHook, type HookDeps, type HookInput } from "./run.js";
+import { withProjectEnv } from "./project-env.js";
 import { appendEvent, pruneSessions, readEvents, sessionDir } from "./state.js";
 import { pruneAgentTurns, turnTextFor } from "./turns.js";
 import { capCostUSD, costUSD } from "../pricing.js";

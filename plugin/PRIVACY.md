@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated: 2026-11-16, for reflect 0.2.2**
+**Last updated: 2026-11-16, for reflect 0.2.3**
 
 reflect runs on your machine as Claude Code hooks and a command-line tool. It has no server, no account, no telemetry and no analytics. The only network calls it makes go to the Anthropic API (`https://api.anthropic.com`), with your own API key, and are billed to that key.
 
@@ -13,7 +13,7 @@ reflect runs on your machine as Claude Code hooks and a command-line tool. It ha
 - your message, cut to 2,500 characters;
 - a summary of the agent's turn just before it: the names of its last 14 tool calls with the file or command each one touched (each cut to 120 characters), whether each changed a file or failed, and the last 1,400 characters of the agent's final reply.
 
-**Each reflection** (Claude Opus 5.5 by default, or the model you configure). Sent only when the trigger fires, or when you run `reflect manual` from a terminal. The plugin's `/reflect:brain-reflect` command sends nothing:
+**Each reflection** (Claude Opus 5.5 by default, or the model you configure). Sent only when the trigger fires, or when you run `reflect manual` from the npm package in a terminal. The plugin's `/reflect:brain-reflect` command is a prompt to the agent and sends nothing:
 
 - the developer turns that triggered it (up to 12), each with your message and the summary of the agent's turn before it, each cut to 1,500 characters;
 - the short phrase the judge quoted as evidence for each one.
@@ -41,7 +41,7 @@ reflect writes nothing outside `.reflect/`. Delete the folder at any time; refle
 
 ## Credentials
 
-reflect uses one credential: the API key you enter in the plugin's settings. Claude Code keeps it in your system's credential store and passes it only to reflect's hook processes. reflect does not read `.env` files, and it ignores any other key, token or login profile on your machine. Before its first API call it removes every `ANTHROPIC_*` variable from its own process and passes the key to the SDK with a fixed address, so the key goes only to `https://api.anthropic.com`. It never prints, logs or stores a key.
+reflect uses one credential: the API key you enter in the plugin's settings. Claude Code keeps it in your system's credential store and passes it only to reflect's hook processes. Besides that key, the hooks read the plugin's other two settings, the plugin and project folders Claude Code gives them, and reflect's own optional `REFLECT_*` switches, each by name. They do not read `.env` files or any other key, token or login profile on your machine: the copy of the Anthropic SDK inside the plugin has its environment and credential-file reading taken out at build time. The key is passed to the SDK with a fixed address, so it goes only to `https://api.anthropic.com`. reflect never prints, logs or stores a key.
 
 ## Turning it off
 

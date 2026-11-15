@@ -28,7 +28,7 @@ export default async function ReflectionsPage() {
           <p className="max-w-md text-sm text-white/55">
             reflect writes a note when two of your last six turns push back on the agent, or when you run{" "}
             <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[12.5px] text-white/80">
-              /reflect:brain-reflect
+              /chanjoongx-reflect:brain-reflect
             </code>
             . Sessions are deleted 7 days after their last event.
           </p>

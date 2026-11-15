@@ -1,6 +1,6 @@
 {
   "name": "@chanjoongx/reflect",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publishConfig": {
     "access": "public"
   },
@@ -10,10 +10,10 @@
     "node": ">=20.0.0"
   },
   "bin": {
-    "reflect": "plugin/hooks/reflect-hook.mjs"
+    "reflect": "dist/reflect.mjs"
   },
   "files": [
-    "plugin/",
+    "dist/",
     ".env.example",
     "README.md",
     "ARCHITECTURE.md",
@@ -59,7 +59,9 @@
   },
   "scripts": {
     "build": "node scripts/build-hook.mjs",
+    "build:cli": "node scripts/build-hook.mjs --cli",
     "check:bundle": "node scripts/build-hook.mjs --check",
+    "prepack": "npm run build:cli",
     "reflect": "tsx src/entry.ts",
     "test": "npm run typecheck && node scripts/test.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p bench/tsconfig.json",
@@ -74,6 +76,6 @@
     "bench:review": "tsx bench/review.ts",
     "bench:sim": "tsx bench/session-sim.ts",
     "bench": "npm run bench:score && npm run bench:report && npm run bench:sim",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "npm run build:cli && node scripts/smoke.mjs"
   }
 }

@@ -25,7 +25,7 @@
 // prompt, and exits 0. Every error becomes an `error` event in the session log.
 
 import { spawn } from "node:child_process";
-import { existsSync, openSync, closeSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, openSync, closeSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { structuralGate } from "../detect/structural.js";
 import { renderPriorTurn } from "../detect/render.js";
@@ -99,7 +99,7 @@ export interface HookDeps {
 // The model calls load the SDK on first use. SessionStart, the sync prompt hook
 // and the PostToolUse hook never call a model, and run on every tool call, so
 // they should not pay for parsing it.
-export const defaultDeps = (env: NodeJS.ProcessEnv = process.env): HookDeps => ({
+export const defaultDeps = (env: NodeJS.ProcessEnv): HookDeps => ({
   env,
   judge: async (pair, opts) => (await import("../detect/judge.js")).judgePair(pair, opts),
   reflect: async (turns, window, opts) => (await import("../reflect/reflection.js")).callReflection(turns, window, opts),
@@ -173,41 +173,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): HookConfig {
     policy: policyById(env["REFLECT_POLICY"]),
     maxUsdPerSession: Number.isFinite(cap) && cap >= 0 ? cap : 0.5,
   };
-}
-
-const ENV_KEYS = /^(ANTHROPIC_API_KEY|REFLECT_[A-Z_]+)$/;
-
-/** `"quoted"` or `'quoted'` as written; otherwise trimmed, with a trailing ` # comment` dropped. */
-function dotenvValue(raw: string): string {
-  const v = raw.trim();
-  const q = /^(["'])(.*)\1$/.exec(v);
-  if (q) return q[2] ?? "";
-  return v.replace(/\s+#.*$/, "").trim();
-}
-
-/**
- * v0.1 told users to put ANTHROPIC_API_KEY in the project's .env. Keep that
- * working for hooks wired by hand and the CLI, but read only reflect's own
- * keys from it, and never override what the environment already says. An
- * installed plugin does not read the file at all: its key and settings come
- * from the plugin's settings.
- */
-export function withProjectEnv(projectDir: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out = { ...env };
-  if (pluginMode(env)) return out;
-  let raw: string;
-  try {
-    raw = readFileSync(join(projectDir, ".env"), "utf8");
-  } catch {
-    return out;
-  }
-  for (const line of raw.split(/\r?\n/)) {
-    const m = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=(.*)$/.exec(line);
-    if (!m || !m[1] || !ENV_KEYS.test(m[1])) continue;
-    if (out[m[1]] !== undefined && out[m[1]] !== "") continue;
-    out[m[1]] = dotenvValue(m[2] ?? "");
-  }
-  return out;
 }
 
 // ─── Small helpers ────────────────────────────────────────────────────

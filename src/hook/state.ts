@@ -180,7 +180,7 @@ export function pruneSessions(projectDir: string, ttlDays = SESSION_TTL_DAYS): n
   return removed;
 }
 
-export function isDisabled(projectDir: string, env: NodeJS.ProcessEnv = process.env): boolean {
+export function isDisabled(projectDir: string, env: NodeJS.ProcessEnv): boolean {
   if (env["REFLECT_DISABLED"] === "1") return true;
   return existsSync(join(stateRoot(projectDir), "disabled"));
 }

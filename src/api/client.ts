@@ -1,11 +1,9 @@
-// src/api/client.ts: one place that decides how reflect authenticates and how
-// much of the Anthropic SDK it loads.
+// src/api/client.ts: one place that builds the Anthropic SDK client and decides
+// how much of the SDK reflect loads.
 //
-// Credentials follow ./credentials.ts. As an installed plugin the client gets
-// the key from the plugin's setting and nothing else: the hook clears every
-// ANTHROPIC_* variable from its own environment first (clearAnthropicEnv), and
-// the base URL is pinned to the Anthropic API, so neither a key, a gateway nor
-// a custom header set in the environment reaches a request.
+// The key and base URL come from sdkAuth in ./credentials.ts, which the
+// plugin's bundle replaces with ./credentials.plugin.ts. As a plugin, the key is
+// the plugin's setting and the base URL is pinned to the Anthropic API.
 //
 // The SDK comes in three pieces loaded with import(): the client core, the
 // Messages API and the beta Messages API. Bundled that way, no file under
@@ -16,11 +14,9 @@
 import type { BaseAnthropic } from "@anthropic-ai/sdk/client";
 import type { Messages } from "@anthropic-ai/sdk/resources/messages/messages";
 import type { Messages as BetaMessages } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { pluginMode, resolveApiKey } from "./credentials.js";
+import { sdkAuth } from "./credentials.js";
 
-export { resolveApiKey, hasCredentials, pluginMode } from "./credentials.js";
-
-export const ANTHROPIC_API_URL = "https://api.anthropic.com";
+export { ANTHROPIC_API_URL, MissingKeyError } from "./auth-common.js";
 
 export interface ClientOptions {
   apiKey?: string;
@@ -34,39 +30,16 @@ export interface MessagesClient {
   beta: { messages: Pick<BetaMessages, "create"> };
 }
 
-export class MissingKeyError extends Error {
-  constructor() {
-    super("no API key: set one in the reflect plugin settings");
-    this.name = "MissingKeyError";
-  }
-}
-
-/**
- * The SDK reads more than a key from the environment: a base URL, an auth
- * token, a profile, and `ANTHROPIC_CUSTOM_HEADERS`, which it adds to every
- * request even when the key is passed in code. A plugin hook is a short-lived
- * process of its own, so it removes every ANTHROPIC_* variable from its own
- * environment before it creates a client, and the SDK finds none of them.
- */
-export function clearAnthropicEnv(target: NodeJS.ProcessEnv = process.env): void {
-  for (const k of Object.keys(target)) if (k.startsWith("ANTHROPIC_")) delete target[k];
-}
-
-export async function makeClient(opts: ClientOptions = {}, env: NodeJS.ProcessEnv = process.env): Promise<MessagesClient> {
-  const plugin = pluginMode(env);
-  const apiKey = opts.apiKey ?? resolveApiKey(env);
-  if (plugin && !apiKey) throw new MissingKeyError();
-  if (plugin) clearAnthropicEnv();
-
+/** `env` is where a key not passed in `opts` is looked up; the CLI's default is its own environment. */
+export async function makeClient(opts: ClientOptions = {}, env?: NodeJS.ProcessEnv): Promise<MessagesClient> {
+  const auth = sdkAuth(opts.apiKey, env);
   const [{ BaseAnthropic: Core }, { Messages: Msgs }, { BetaMessages: BetaMsgs }] = await Promise.all([
     import("./sdk/core.js"),
     import("./sdk/messages.js"),
     import("./sdk/beta-messages.js"),
   ]);
   const core: BaseAnthropic = new Core({
-    // Outside the plugin, an absent key lets the SDK resolve its own credential.
-    ...(apiKey ? { apiKey } : {}),
-    ...(plugin ? { baseURL: ANTHROPIC_API_URL } : {}),
+    ...auth,
     maxRetries: opts.maxRetries ?? 2,
     timeout: opts.timeoutMs ?? 60_000,
   });

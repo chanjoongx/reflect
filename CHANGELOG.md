@@ -6,6 +6,24 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.2.3] 2026-11-16
+
+Changes from the plugin directory's validation report for 0.2.2.
+
+### Changed
+
+- **The plugin is now `chanjoongx-reflect`.** The directory reserves `reflect` for an existing connector of that name. The command is `/chanjoongx-reflect:brain-reflect`. If you installed `reflect@chanjoongx`, remove it in `/plugin` and install `chanjoongx-reflect@chanjoongx`. The npm package and the repository keep their names, and the notes still start with `reflect:`.
+- **Two bundles.** The plugin's hooks are built from `src/plugin-entry.ts` and hold no CLI code. The npm package's `reflect` command is built from `src/entry.ts` into `dist/reflect.mjs` when the package is packed, and the package no longer contains `plugin/`. If you wired the hooks by hand, run `reflect init` again for the new path.
+- **Named environment reads.** The plugin's hooks read 13 environment variables, each by name: the ones Claude Code passes a plugin's hooks and reflect's optional `REFLECT_*` switches. The build fails if the plugin's bundle reads any other.
+- **No credential code in the plugin.** In the plugin's copy of the Anthropic SDK, the build replaces the modules that read environment variables, token files and login profiles. The key from the plugin's settings is the only one it can use, and it goes only to `https://api.anthropic.com`.
+- **`/chanjoongx-reflect:brain-reflect`** is a prompt with no shell line and no `allowed-tools`. The agent reflects from the conversation, starting from reflect's latest note if one was delivered.
+- **Icon.** `plugin/icon.png` replaces `plugin/icon.svg`, a file type the directory will stop accepting. The SVG source moved to `docs/diagrams/icon.svg`.
+- The plugin folder is 23 files and 546 KB (0.2.2: 24 files, 572 KB), and none of its files starts with `#!`.
+
+### Removed
+
+- `reflect manual --plugin`, which only the old `/reflect:brain-reflect` used.
+
 ## [0.2.2] 2026-11-16
 
 A review against the plugin directory's policy, before the new submission.

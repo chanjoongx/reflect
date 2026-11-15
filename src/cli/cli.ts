@@ -1,4 +1,5 @@
-// src/cli/cli.ts: `reflect <command>`, shared by the npm bin and the plugin bundle.
+// src/cli/cli.ts: `reflect <command>`, the npm package's command (dist/reflect.mjs).
+// The installed plugin does not include it; see src/plugin-entry.ts.
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -15,10 +16,9 @@ import {
   promptOrder,
   reflectAndRecord,
   sessionSpend,
-  withProjectEnv,
 } from "../hook/run.js";
+import { withProjectEnv } from "../hook/project-env.js";
 import { appendEvent, isDisabled, latestSession, now, readEvents, setDisabled, stateRoot, type HookEvent } from "../hook/state.js";
-import { turnTextFor } from "../hook/turns.js";
 import { VERSION } from "../version.js";
 
 const HELP = `reflect ${VERSION}: notices when you keep correcting Claude Code, and tells it why.
@@ -26,15 +26,14 @@ const HELP = `reflect ${VERSION}: notices when you keep correcting Claude Code, 
 USAGE
   reflect status [--session ID]   What reflect has seen in the latest (or given) session
   reflect manual [--turns N]      Reflect on the last N judged turns now (default 6)
-                  [--agent]       Output for the /brain-reflect command: always exits 0
-                  [--plugin]      Set by the plugin's command: list what was recorded, no API call
+                  [--agent]       Output meant for an agent's context: always exits 0
   reflect doctor                  Check node, credentials and the hook bundle
   reflect init                    Print the hook settings for a project that does not use the plugin
   reflect off | on                Disable or re-enable reflect for this project
 
 ENVIRONMENT (all optional)
-  ANTHROPIC_API_KEY               Outside the plugin, or \`ant auth login\`. The plugin's hooks use only
-                                  the API key entered in the plugin's settings
+  ANTHROPIC_API_KEY               Or \`ant auth login\`. The installed plugin does not run this
+                                  command; its hooks use only the key in the plugin's settings
   REFLECT_JUDGE_MODEL             Default claude-haiku-5-5
   REFLECT_MODEL                   Reflection model. Default claude-opus-5-5
   REFLECT_EFFORT                  low|medium|high|xhigh|max. Default high
@@ -87,7 +86,7 @@ function summarize(events: HookEvent[]) {
 function cmdStatus(argv: string[]): number {
   const dir = projectDir();
   const sid = flag(argv, "--session") ?? latestSession(dir);
-  if (isDisabled(dir)) console.log("reflect is OFF for this project (`reflect on` to re-enable).");
+  if (isDisabled(dir, env0())) console.log("reflect is OFF for this project (`reflect on` to re-enable).");
   if (!sid) {
     console.log("reflect: no session recorded in this project yet.");
     return 0;
@@ -118,26 +117,6 @@ function cmdStatus(argv: string[]): number {
 
 type Verdict = Extract<HookEvent, { t: "verdict" }>;
 
-function printRecorded(dir: string, sid: string, events: HookEvent[], recent: Verdict[], forAgent: boolean): void {
-  const order = promptOrder(events);
-  const pushbacks = recent.filter((v) => isPushback(v.label));
-  console.log(`reflect: of your last ${recent.length} judged messages, ${pushbacks.length} read as pushback.`);
-  for (const v of pushbacks) {
-    const quote = turnTextFor(dir, sid, v)?.evidence;
-    console.log(`  turn ${order.indexOf(v.promptId) + 1} (${v.label}, ${v.confidence})${quote ? `: "${quote}"` : ""}`);
-  }
-  const g = activeGuidance(events) ?? pendingGuidance(events);
-  if (g) {
-    console.log("");
-    console.log("The note reflect last gave the agent:");
-    console.log(formatForAgent(g.reflection, { pushbacks: 0, window: 0, turns: [], manual: true }));
-  }
-  if (forAgent) {
-    console.log("");
-    console.log(NO_REFLECTION_FOR_AGENT);
-  }
-}
-
 const NO_REFLECTION_FOR_AGENT =
   "No outside reflection is available, so write one yourself from this conversation instead (see below).";
 
@@ -165,12 +144,6 @@ async function cmdManual(argv: string[]): Promise<number> {
   }
   const recent = verdicts.slice(-n);
   const env = withProjectEnv(dir, process.env);
-  if (pluginMode(env)) {
-    // The plugin's /brain-reflect makes no API call. It hands the agent what
-    // the hooks recorded, and the agent writes the reflection itself.
-    printRecorded(dir, sid, events, recent, forAgent);
-    return 0;
-  }
   const turns = evidenceTurns(dir, sid, recent, order);
   if (turns.length === 0) {
     console.log("reflect: the text of those messages is no longer kept (only the last 12 are), so there is nothing to send.");
@@ -211,10 +184,8 @@ function cmdDoctor(): number {
       : key ? "API key found (environment or .env)"
         : "none in the environment; the SDK may still find an `ant auth login` profile",
   ]);
-  const root = process.env["CLAUDE_PLUGIN_ROOT"];
-  if (root) {
-    rows.push(["hook bundle", existsSync(join(root, "hooks", "reflect-hook.mjs")), join(root, "hooks", "reflect-hook.mjs")]);
-  }
+  const bundle = bundlePath();
+  rows.push(["hook bundle", existsSync(bundle), bundle]);
   rows.push(["enabled here", !isDisabled(dir, env), isDisabled(dir, env) ? "`reflect on` to re-enable" : dir]);
   const sid = latestSession(dir);
   rows.push(["sessions recorded", sid !== null, sid ? `latest ${sid}` : "none yet (normal before the first prompt)"]);
@@ -227,13 +198,13 @@ function cmdDoctor(): number {
   return rows.every(([n, ok]) => ok || n === "sessions recorded" || n === "credentials") ? 0 : 1;
 }
 
-/** This file inside the bundle; the bundle next to src/ when run from source. */
+/** This file inside the bundle; the built bundle in dist/ when run from source. */
 function bundlePath(): string {
   const here = fileURLToPath(import.meta.url);
-  return here.endsWith(".mjs") ? here : resolve(dirname(here), "..", "..", "plugin", "hooks", "reflect-hook.mjs");
+  return here.endsWith(".mjs") ? here : resolve(dirname(here), "..", "..", "dist", "reflect.mjs");
 }
 
-/** The same wiring as plugin/hooks/hooks.json, for settings.local.json instead of a plugin. */
+/** The same wiring as plugin/hooks/hooks.json, for settings.local.json instead of the plugin. */
 export function hookSettings(bundle: string): unknown {
   const hook = (mode: string, extra: Record<string, unknown>) => ({ type: "command", command: "node", args: [bundle, mode], ...extra });
   return {
@@ -250,7 +221,7 @@ export function hookSettings(bundle: string): unknown {
 function cmdInit(): number {
   const bundle = bundlePath().split("\\").join("/");
   console.log("As a plugin, reflect needs no setup. In Claude Code:");
-  console.log("  /plugin install reflect --marketplace chanjoongx/reflect");
+  console.log("  /plugin install chanjoongx-reflect --marketplace chanjoongx/reflect");
   console.log("");
   console.log("Without the plugin, merge this into .claude/settings.local.json (personal, not committed).");
   console.log("The bundle path is absolute because hook arguments do not pass through a shell.");
@@ -261,11 +232,7 @@ function cmdInit(): number {
   return 0;
 }
 
-export async function runCli(argvIn: string[]): Promise<number> {
-  // The plugin's command passes --plugin: it runs inside the plugin, but
-  // Claude Code does not set CLAUDE_PLUGIN_ROOT for commands. See api/credentials.ts.
-  const argv = argvIn.filter((a) => a !== "--plugin");
-  if (argv.length !== argvIn.length) process.env["REFLECT_PLUGIN"] = "1";
+export async function runCli(argv: string[]): Promise<number> {
   const cmd = argv[0];
   switch (cmd) {
     case undefined:

@@ -99,7 +99,7 @@ export function ReflectionCard({ view, variant = "default", showSession = false,
       : NOTE_STATE_TEXT[view.state];
 
   const origin = view.manual
-    ? "requested with /reflect:brain-reflect"
+    ? "requested with /chanjoongx-reflect:brain-reflect"
     : view.evidenceTurns.length
       ? `from pushback on turns ${view.evidenceTurns.join(", ")}`
       : view.turn !== null

@@ -1,33 +1,26 @@
-// src/api/credentials.ts: where reflect looks for a key. No SDK import, so the
-// hooks that only deliver guidance can call it cheaply.
+// src/api/credentials.ts: where the reflect CLI looks for a key. No SDK import,
+// so the hooks that only deliver guidance can call it cheaply.
 //
-// As an installed plugin, reflect uses one credential: the API key the user
-// typed into the plugin's own setting. Claude Code keeps it in the system
-// credential store and passes it to the plugin's hook processes as
-// CLAUDE_PLUGIN_OPTION_ANTHROPIC_API_KEY. Nothing else is read in that mode,
-// not the environment, not a project .env file and not an SDK profile.
+// The installed plugin does not use this file: its bundle swaps in
+// ./credentials.plugin.ts, which reads the plugin's own setting and nothing else
+// (scripts/build-hook.mjs). What follows is for the npm CLI and for hooks wired
+// into settings.json by hand.
 //
-// Claude Code sets CLAUDE_PLUGIN_ROOT for every hook a plugin runs, which is
-// how the hooks know they are a plugin. The plugin's slash command runs the CLI
-// with --plugin (it sets REFLECT_PLUGIN=1), because commands do not receive
-// CLAUDE_PLUGIN_ROOT in their environment.
-//
-// Run by hand from a terminal, or wired into settings.json without the plugin
-// system, reflect also accepts ANTHROPIC_API_KEY from the environment (or the
-// project's .env, loaded by withProjectEnv) and whatever the Anthropic SDK
-// resolves on its own: ANTHROPIC_AUTH_TOKEN or an `ant auth login` profile.
+// Run that way, reflect accepts ANTHROPIC_API_KEY from the environment (or the
+// project's .env, loaded by withProjectEnv in ../hook/project-env.ts) and
+// whatever the Anthropic SDK resolves on its own: ANTHROPIC_AUTH_TOKEN or an
+// `ant auth login` profile. CLAUDE_PLUGIN_ROOT or REFLECT_PLUGIN=1 switch it to
+// the plugin's rules, which the tests use to cover both.
 //
 // Nothing here prints, logs or persists a credential.
 
-export const PLUGIN_KEY_VAR = "CLAUDE_PLUGIN_OPTION_ANTHROPIC_API_KEY";
+import { ANTHROPIC_API_URL, MissingKeyError, PLUGIN_KEY_VAR, clean, type SdkAuth } from "./auth-common.js";
 
-/** True when reflect runs as an installed plugin: a plugin hook, or the plugin's command. */
+export { PLUGIN_KEY_VAR };
+
+/** True when reflect follows the plugin's rules: only the plugin setting, pinned to the Anthropic API. */
 export function pluginMode(env: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(env["CLAUDE_PLUGIN_ROOT"]) || env["REFLECT_PLUGIN"] === "1";
-}
-
-function clean(v: string | undefined): string | undefined {
-  return v && v.trim() ? v.trim() : undefined;
 }
 
 export function resolveApiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
@@ -45,4 +38,25 @@ export function hasCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
     Boolean(env["ANTHROPIC_PROFILE"]) ||
     Boolean(env["ANTHROPIC_FEDERATION_RULE_ID"])
   );
+}
+
+/**
+ * The SDK reads more than a key from the environment: a base URL, an auth
+ * token, a profile, and `ANTHROPIC_CUSTOM_HEADERS`, which it adds to every
+ * request even when the key is passed in code. Under the plugin's rules the
+ * process removes every ANTHROPIC_* variable from its own environment before
+ * it creates a client, so the SDK finds none of them.
+ */
+export function clearAnthropicEnv(target: NodeJS.ProcessEnv = process.env): void {
+  for (const k of Object.keys(target)) if (k.startsWith("ANTHROPIC_")) delete target[k];
+}
+
+/** The key and base URL for a client. `apiKey` is one the caller already resolved. */
+export function sdkAuth(apiKey: string | undefined, env: NodeJS.ProcessEnv = process.env): SdkAuth {
+  const plugin = pluginMode(env);
+  const key = apiKey ?? resolveApiKey(env);
+  if (plugin && !key) throw new MissingKeyError();
+  if (plugin) clearAnthropicEnv();
+  // Outside the plugin's rules, an absent key lets the SDK resolve its own credential.
+  return { ...(key ? { apiKey: key } : {}), ...(plugin ? { baseURL: ANTHROPIC_API_URL } : {}) };
 }

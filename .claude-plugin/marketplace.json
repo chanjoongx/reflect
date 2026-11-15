@@ -8,7 +8,7 @@
   },
   "plugins": [
     {
-      "name": "reflect",
+      "name": "chanjoongx-reflect",
       "source": "./plugin",
       "category": "development",
       "tags": [

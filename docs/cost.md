@@ -54,7 +54,7 @@ How often it runs: replaying the default policy over the August sessions with th
 reflect stops calling the API in a session once its logged spend reaches $0.50, the default. Change it with the plugin's spend-cap setting or `REFLECT_MAX_USD_PER_SESSION`; 0 turns the API calls off. Four details:
 
 - The cap is checked before each judge call and again before each reflection. Judge calls already running when the cap is reached still finish, so a session can end slightly past it.
-- `reflect manual` does not check the cap, but its cost counts toward it. `/reflect:brain-reflect` makes no API call.
+- `reflect manual` does not check the cap, but its cost counts toward it. `/chanjoongx-reflect:brain-reflect` makes no API call.
 - A model id missing from `src/pricing.ts` is charged at the highest rate in that table, so a custom model still runs into the cap.
 - A call that fails is not logged. If the API billed it anyway, that amount is not counted.
 

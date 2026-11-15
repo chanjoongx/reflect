@@ -6,28 +6,28 @@ This page takes you from install to your first reflection. The rest of the time 
 
 - Claude Code 2.1.275 or later. Older versions work with the two-step install below.
 - `node` 20 or later on your `PATH`. The hook is a bundled file with nothing to install.
-- An Anthropic API key, entered in the plugin settings. The judge and the reflection call the Anthropic API directly and are billed to that key. A Claude subscription login on its own is not enough for the automatic path; without a key you can still use `/reflect:brain-reflect`, and the agent writes the reflection itself.
+- An Anthropic API key, entered in the plugin settings. The judge and the reflection call the Anthropic API directly and are billed to that key. A Claude subscription login on its own is not enough for the automatic path; without a key you can still use `/chanjoongx-reflect:brain-reflect`, and the agent writes the reflection itself.
 
 ## 1. Install the plugin
 
 In Claude Code:
 
 ```
-/plugin install reflect --marketplace chanjoongx/reflect
+/plugin install chanjoongx-reflect --marketplace chanjoongx/reflect
 ```
 
 On versions before 2.1.275:
 
 ```
 /plugin marketplace add chanjoongx/reflect
-/plugin install reflect@chanjoongx
+/plugin install chanjoongx-reflect@chanjoongx
 ```
 
 When you enable the plugin, Claude Code asks for three settings:
 
 | setting | default | |
 |---|---|---|
-| Anthropic API key | empty | Kept in your system's credential store. The plugin uses only this key. Without it the automatic notes stay off, and `/reflect:brain-reflect` still works. |
+| Anthropic API key | empty | Kept in your system's credential store. The plugin uses only this key. Without it the automatic notes stay off, and `/chanjoongx-reflect:brain-reflect` still works. |
 | Reflection model | `claude-opus-5-5` | The model that writes the note. The judge is always Claude Haiku 5.5 unless you set `REFLECT_JUDGE_MODEL`. |
 | Spend cap per session (USD) | `0.5` | reflect stops calling the API in a session once its calls there have cost this much. |
 
@@ -86,10 +86,10 @@ If a note is waiting or still in force, `status` prints it under `Guidance waiti
 Inside Claude Code:
 
 ```
-/reflect:brain-reflect
+/chanjoongx-reflect:brain-reflect
 ```
 
-This lists which of your last six judged messages read as pushback, with the words the judge quoted, and the note reflect last gave the agent, if there is one. The agent then writes the reflection itself: what it has been doing that you keep redirecting, and what it will change. The command makes no API call, because Claude Code passes the plugin's key to its hooks but not to its commands.
+The command is a prompt to the agent. It runs nothing and makes no API call. The agent looks back at your recent messages and what it did before each one, starting from the note reflect last gave it if there is one, and tells you what it has been doing that you keep redirecting and what it will change.
 
 From a terminal, `npx @chanjoongx/reflect manual --turns 10` sends your last 10 judged messages to the reflection model, using a key from your environment, and prints the note.
 
@@ -114,19 +114,19 @@ reflect init
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "session-start"], "timeout": 10 }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/dist/reflect.mjs", "session-start"], "timeout": 10 }] }],
     "UserPromptSubmit": [{ "hooks": [
-      { "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "prompt"], "timeout": 10 },
-      { "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "judge"], "async": true }
+      { "type": "command", "command": "node", "args": ["<package>/dist/reflect.mjs", "prompt"], "timeout": 10 },
+      { "type": "command", "command": "node", "args": ["<package>/dist/reflect.mjs", "judge"], "async": true }
     ] }],
-    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "tool"], "timeout": 10 }] }],
-    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "tool-failed"], "timeout": 10 }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "stop"], "timeout": 10 }] }]
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/dist/reflect.mjs", "tool"], "timeout": 10 }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/dist/reflect.mjs", "tool-failed"], "timeout": 10 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/dist/reflect.mjs", "stop"], "timeout": 10 }] }]
   }
 }
 ```
 
-Then run `reflect doctor` in the project and restart Claude Code. Without the plugin there is no settings dialog, so the key has to come from `ANTHROPIC_API_KEY` or the project's `.env`, and `/reflect:brain-reflect` is not installed; use `reflect manual` instead.
+Then run `reflect doctor` in the project and restart Claude Code. Without the plugin there is no settings dialog, so the key has to come from `ANTHROPIC_API_KEY` or the project's `.env`, and `/chanjoongx-reflect:brain-reflect` is not installed; use `reflect manual` instead.
 
 ## What reflect writes
 

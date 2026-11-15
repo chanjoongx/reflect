@@ -1,4 +1,6 @@
 plugin/hooks/reflect-hook.mjs and plugin/hooks/lib/ bundle the following packages. reflect itself is MIT (see LICENSE).
+In this copy of @anthropic-ai/sdk, the build replaces the modules that read environment variables and
+credential files with stubs, because the plugin passes its API key in code (scripts/build-hook.mjs).
 
 @anthropic-ai/sdk@1.5.0 (Apache-2.0)
 ------------------------------------------------------------

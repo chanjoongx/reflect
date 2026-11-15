@@ -24,7 +24,7 @@ Please do **not** open public GitHub issues for security reports until a fix is 
 
 - **No runtime dependencies**: the official Anthropic SDK (`@anthropic-ai/sdk`) is bundled into `plugin/hooks/lib/`. Licenses of everything bundled are in `plugin/hooks/THIRD_PARTY_LICENSES.txt`.
 - **No network calls** beyond the Anthropic Messages API: one judge call (Claude Haiku 5.5) per judged developer message, and one reflection call (Claude Opus 5.5 by default) when the trigger fires or you run `reflect manual` from a terminal. As a plugin, reflect uses only the API key from its own setting and sends it only to `https://api.anthropic.com`
-- **The hooks are one Node.js bundle**: `plugin/hooks/reflect-hook.mjs`, built from `src/` by `scripts/build-hook.mjs`. CI fails if the committed bundle does not match the source. The hooks read only the JSON Claude Code passes on stdin (they never open the session transcript) and write only under `.reflect/` in the project. They never block a prompt or a tool call. Review `src/hook/run.ts` before adopting.
+- **The hooks are one Node.js bundle**: `plugin/hooks/reflect-hook.mjs`, built from `src/plugin-entry.ts` by `scripts/build-hook.mjs`. CI fails if the committed bundle does not match the source. It reads 13 environment variables, each by name (listed in `src/plugin-entry.ts`), and the build fails on any other read. Its copy of the SDK has the modules that read the environment and credential files replaced with stubs. The hooks read only the JSON Claude Code passes on stdin (they never open the session transcript) and write only under `.reflect/` in the project. They never block a prompt or a tool call. Review `src/hook/run.ts` before adopting.
 
 ## Data sent to Anthropic
 

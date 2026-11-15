@@ -11,7 +11,7 @@
 </div>
 
 ```
-/plugin install reflect --marketplace chanjoongx/reflect
+/plugin install chanjoongx-reflect --marketplace chanjoongx/reflect
 ```
 
 ---
@@ -83,12 +83,12 @@ What these numbers do not tell you:
 In Claude Code 2.1.275 or later:
 
 ```
-/plugin install reflect --marketplace chanjoongx/reflect
+/plugin install chanjoongx-reflect --marketplace chanjoongx/reflect
 ```
 
-On older versions, run `/plugin marketplace add chanjoongx/reflect`, then `/plugin install reflect@chanjoongx`.
+On older versions, run `/plugin marketplace add chanjoongx/reflect`, then `/plugin install chanjoongx-reflect@chanjoongx`.
 
-The automatic path calls the Anthropic API directly, so it needs an API key. Claude Code asks for one when you enable the plugin and keeps it in your system's credential store. The plugin uses that key and no other: it ignores `ANTHROPIC_API_KEY`, `.env` files and `ant auth login` profiles, and it sends the key only to `api.anthropic.com`. A Claude subscription login on its own is not enough for the hooks. `/reflect:brain-reflect` works without a key, because the agent writes the reflection itself.
+The automatic path calls the Anthropic API directly, so it needs an API key. Claude Code asks for one when you enable the plugin and keeps it in your system's credential store. The plugin uses that key and no other: it ignores `ANTHROPIC_API_KEY`, `.env` files and `ant auth login` profiles, and it sends the key only to `api.anthropic.com`. A Claude subscription login on its own is not enough for the hooks. `/chanjoongx-reflect:brain-reflect` works without a key, because the agent writes the reflection itself.
 
 You need `node` 20 or later on your `PATH`. The plugin is the [`plugin/`](plugin/) folder of this repository: the hook bundle, which has nothing to install, the command, and the plugin's own [README](plugin/README.md).
 
@@ -117,14 +117,14 @@ reflect stops calling the API in a session once it has spent $0.50 there. Change
 
 | command | what it does |
 |---|---|
-| `/reflect:brain-reflect` | Lists which of your last six judged messages read as pushback and has the agent reflect on them. No API call |
+| `/chanjoongx-reflect:brain-reflect` | Has the agent look back at your recent messages and say what it keeps getting wrong, starting from reflect's latest note if there is one. No API call, and it runs nothing |
 | `reflect status` | What reflect has seen in the latest session: turns judged, pushbacks, notes, spend, errors |
 | `reflect manual [--turns N]` | From a terminal: the reflection model reads your last N judged messages (default 6) and writes a note, whether or not the trigger fired |
 | `reflect doctor` | Checks node, credentials, the hook bundle and `.reflect/` |
 | `reflect off`, `reflect on` | Turns reflect off or on for this project |
 | `reflect init` | Prints hook settings for use without the plugin |
 
-Outside the plugin, run the CLI as `npx @chanjoongx/reflect <command>`.
+The `reflect` commands come with the npm package, not the plugin. Run them as `npx @chanjoongx/reflect <command>`.
 
 ## Configuration
 
@@ -151,13 +151,13 @@ Each judged message goes to the Anthropic API with your key: the message (up to 
 ```bash
 npm install
 npm test               # typecheck and unit tests; the model calls are faked
-npm run build          # bundles src/ into plugin/hooks/reflect-hook.mjs and plugin/hooks/lib/
-npm run smoke          # runs the bundle the way Claude Code does
+npm run build          # bundles src/ into plugin/hooks/ (the plugin) and dist/ (the npm command)
+npm run smoke          # runs both bundles the way Claude Code and npm do
 claude --plugin-dir ./plugin  # try the working copy in a session
 ```
 
-Claude Code installs only `plugin/`, and that folder is also what Anthropic's plugin directory reviews. The source, the benchmark, the viewer and the docs stay out of it. The committed bundle must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
+Claude Code installs only `plugin/`, and that folder is also what Anthropic's plugin directory reviews. The source, the benchmark, the viewer and the docs stay out of it. The plugin's bundle is built from `src/plugin-entry.ts` and holds only the hooks; the npm command is built from `src/entry.ts` into `dist/`, which is not committed. The committed plugin bundle must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
 
 ## License
 
-MIT. The bundled Anthropic SDK and its dependencies are listed with their licenses in [`plugin/hooks/THIRD_PARTY_LICENSES.txt`](plugin/hooks/THIRD_PARTY_LICENSES.txt).
+MIT. The bundled Anthropic SDK and its dependencies are listed with their licenses in [`plugin/hooks/THIRD_PARTY_LICENSES.txt`](plugin/hooks/THIRD_PARTY_LICENSES.txt), and in `dist/THIRD_PARTY_LICENSES.txt` in the npm package.

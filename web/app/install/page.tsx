@@ -25,10 +25,10 @@ const steps: Step[] = [
     body: (
       <div className="flex flex-col gap-3">
         <p className="text-sm leading-relaxed text-white/70">In Claude Code 2.1.275 or later:</p>
-        <CopyBlock code="/plugin install reflect --marketplace chanjoongx/reflect" />
+        <CopyBlock code="/plugin install chanjoongx-reflect --marketplace chanjoongx/reflect" />
         <p className="text-sm leading-relaxed text-white/55">
           On older versions, run {code("/plugin marketplace add chanjoongx/reflect")}, then{" "}
-          {code("/plugin install reflect@chanjoongx")}. You need {code("node")} 20 or later on your{" "}
+          {code("/plugin install chanjoongx-reflect@chanjoongx")}. You need {code("node")} 20 or later on your{" "}
           {code("PATH")}; the hook is one bundled file with nothing else to install.
         </p>
       </div>
@@ -54,7 +54,7 @@ const steps: Step[] = [
           <div className="flex flex-col gap-1 text-[13px] leading-relaxed text-white/75">
             <span className="font-medium text-white/90">A Claude subscription login is not enough for the hooks.</span>
             <span className="text-white/60">
-              Without a key, {code("/reflect:brain-reflect")} still works: the agent writes the reflection
+              Without a key, {code("/chanjoongx-reflect:brain-reflect")} still works: the agent writes the reflection
               itself from its own context.
             </span>
           </div>
@@ -163,7 +163,7 @@ export default function InstallPage() {
           </CardHeader>
           <CardContent>
             <div className="rounded-md border border-white/10 bg-[#0a0a0e] px-3 py-2 font-mono text-[13px] text-[var(--color-brand-purple)]">
-              /reflect:brain-reflect
+              /chanjoongx-reflect:brain-reflect
             </div>
             <p className="text-sm leading-relaxed text-white/55">
               From a terminal: {code("npx @chanjoongx/reflect manual --turns 6")}.

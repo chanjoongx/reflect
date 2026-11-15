@@ -143,7 +143,7 @@ function EmptyState({ count }: { count: number }) {
           Groups need at least two notes. The recorded sessions have{" "}
           <span className="font-mono text-white/85 tabular-nums">{count}</span>.
           A note is written when two of your last six turns push back on the
-          agent, or when you run /reflect:brain-reflect.
+          agent, or when you run /chanjoongx-reflect:brain-reflect.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Link href="/install">

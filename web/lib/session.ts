@@ -381,7 +381,7 @@ export const VIA_TEXT: Record<string, string> = {
   prompt: "with the next prompt",
   tool: "after a tool call",
   "session-start": "again after compaction or resume",
-  command: "through /reflect:brain-reflect",
+  command: "through /chanjoongx-reflect:brain-reflect",
 };
 
 export function formatUsd(v: number): string {

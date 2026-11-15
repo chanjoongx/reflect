@@ -17,9 +17,9 @@ Every hook runs one bundled file, `hooks/reflect-hook.mjs`, with `node` 20 or la
 | `PostToolUseFailure` | a tool call fails | Records the tool's name and target, marked as failed. |
 | `Stop` | the agent finishes its reply | Records the reply (its last 4,000 characters). |
 
-The `/reflect:brain-reflect` command runs the same file to list which of your last six judged messages read as pushback, with the words the judge quoted, and then asks the agent to reflect on them itself. The command makes no API call.
+The `/chanjoongx-reflect:brain-reflect` command is a prompt and nothing else: it runs no file and makes no API call. It asks the agent to look back at your recent messages and what it did before each one, starting from reflect's latest note if there is one, and to say what it will change.
 
-reflect downloads nothing and installs nothing. The bundle includes the Anthropic TypeScript SDK; `hooks/THIRD_PARTY_LICENSES.txt` lists it and its dependencies with their licenses.
+reflect downloads nothing and installs nothing. The bundle includes the Anthropic TypeScript SDK; `hooks/THIRD_PARTY_LICENSES.txt` lists it and its dependencies with their licenses. In this copy, the build replaces the SDK's code that reads environment variables and credential files, so the key from the plugin's settings is the only one it can use.
 
 ## What it sends, and where
 
@@ -51,7 +51,7 @@ Each time the agent receives a note, reflect shows you the whole note in a messa
 
 1. **Edits that spread.** You ask for a fix in `src/parser.ts`. The agent also reformats two other files, you write "only the parser, please", and two messages later "leave the tests alone". The note tells the agent to edit only the files you name and to ask before touching any other.
 2. **The same wrong approach twice.** You write "no, use the existing date helper", and after the next attempt "still not using it". The note tells the agent to use the helper you named and to look for an existing one before writing new code.
-3. **A check-in on demand.** A long session feels off, so you run `/reflect:brain-reflect`. The agent lists the messages reflect read as pushback, says what it has been doing that you keep redirecting, and says what it will change.
+3. **A check-in on demand.** A long session feels off, so you run `/chanjoongx-reflect:brain-reflect`. The agent quotes the messages where you pushed back, says what it has been doing that you keep redirecting, and says what it will change.
 
 ## Settings
 
@@ -77,6 +77,6 @@ Disable the plugin in `/plugin`. To turn it off for one project only, create an 
 
 ## Source
 
-The bundle is built with esbuild from the TypeScript in [`src/`](https://github.com/chanjoongx/reflect/tree/main/src), without minification, and no file passes 256 KiB. CI rebuilds it on every push and fails if the committed files differ. The benchmark behind the detection numbers, and the code that produced them, are in the [repository](https://github.com/chanjoongx/reflect).
+The bundle is built with esbuild from the TypeScript in [`src/`](https://github.com/chanjoongx/reflect/tree/main/src), starting at `src/plugin-entry.ts`, without minification, and no file passes 256 KiB. The build fails if the bundle reads an environment variable other than the ones the plugin uses. CI rebuilds it on every push and fails if the committed files differ. The benchmark behind the detection numbers, and the code that produced them, are in the [repository](https://github.com/chanjoongx/reflect).
 
 Privacy policy: [PRIVACY.md](PRIVACY.md). Questions and bugs: [GitHub issues](https://github.com/chanjoongx/reflect/issues) or cj@chanjoongx.com. License: MIT.

@@ -38,7 +38,9 @@ const dropUnusedSdk = {
   setup(b) {
     b.onResolve({ filter: /agent-toolset[\\/]node(\.mjs)?$/ }, (args) => {
       const full = resolve(args.resolveDir, args.path);
-      return UNUSED_SDK.test(full) ? { path: full, namespace: "reflect-empty" } : undefined;
+      // A fixed path, not `full`: esbuild names the chunk from it, and an
+      // absolute path would give every machine a different chunk name.
+      return UNUSED_SDK.test(full) ? { path: "sdk-agent-toolset-node", namespace: "reflect-empty" } : undefined;
     });
     b.onLoad({ filter: /.*/, namespace: "reflect-empty" }, () => ({ contents: "export {};", loader: "js" }));
   },

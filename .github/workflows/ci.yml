@@ -37,7 +37,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           WANT=$(node -p "require('./package.json').version")
-          TARBALL="$PWD/$(npm pack --silent)"
+          # prepack builds dist/ and prints a line, so the file name is the last line.
+          TARBALL="$PWD/$(npm pack --silent | tail -n 1)"
+          test -f "$TARBALL"
           cd "$(mktemp -d)"
           npm init -y >/dev/null
           npm install --no-audit --no-fund "$TARBALL" >/dev/null

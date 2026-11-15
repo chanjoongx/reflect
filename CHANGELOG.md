@@ -6,7 +6,23 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
-## [0.2.0] (unreleased)
+## [0.2.1] 2026-11-16
+
+Changes for Anthropic's plugin directory, which declined 0.1.4.
+
+### Changed
+
+- **The plugin is the `plugin/` folder.** Claude Code installs only that folder: the manifest, the hook bundle, the `/brain-reflect` command, a README and the privacy policy. The source, the benchmark, the viewer and the dev tooling stay in the repository. Installing no longer pulls the 75 MB of build tools that Claude Code fetched because `package.json` and `package-lock.json` sat at the plugin root.
+- **One credential as a plugin.** The hooks use only the API key from the plugin's setting and send it only to `https://api.anthropic.com`. They ignore `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `.env` keys and `ant auth login` profiles. Hooks wired by hand and the CLI keep the old order.
+- **You see every note.** When the agent receives a note, the hook also shows it to the developer as a message with the pattern and the adjustment.
+- **`/reflect:brain-reflect` makes no API call.** Claude Code does not pass a plugin's key to its commands, so the command lists which recent messages read as pushback and the agent writes the reflection. The command no longer passes its argument to a shell. `reflect manual` in a terminal still calls the reflection model.
+- **Smaller bundle.** The SDK is loaded in three pieces, so the bundle keeps only what reflect calls: 530 KB in 19 files, the largest 154 KB, where 0.2.0 had a 1 MB chunk. The build fails if any file reaches 256 KiB.
+
+### Added
+
+- `plugin/icon.svg` for the directory listing.
+
+## [0.2.0] 2026-11-16
 
 0.1.4 never fired. Over 109 real sessions in July it triggered zero reflections, and on a labelled benchmark of 837 developer turns it found 0 of the 141 that were pushback ([`bench/FINDINGS.md`](bench/FINDINGS.md)). 0.2 replaces the detector, the reflection and the delivery.
 

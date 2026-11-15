@@ -9,9 +9,13 @@
   "plugins": [
     {
       "name": "reflect",
-      "source": "./",
+      "source": "./plugin",
       "category": "development",
-      "tags": ["hooks", "metacognition", "pushback"]
+      "tags": [
+        "hooks",
+        "metacognition",
+        "pushback"
+      ]
     }
   ]
 }

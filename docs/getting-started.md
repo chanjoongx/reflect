@@ -6,7 +6,7 @@ This page takes you from install to your first reflection. The rest of the time 
 
 - Claude Code 2.1.275 or later. Older versions work with the two-step install below.
 - `node` 20 or later on your `PATH`. The hook is a bundled file with nothing to install.
-- An Anthropic API key, or an `ant auth login` profile. The judge and the reflection call the Anthropic API directly and are billed to that key. A Claude subscription login on its own is not enough for the automatic path; without a key you can still use `/reflect:brain-reflect`, and the agent writes the reflection itself.
+- An Anthropic API key, entered in the plugin settings. The judge and the reflection call the Anthropic API directly and are billed to that key. A Claude subscription login on its own is not enough for the automatic path; without a key you can still use `/reflect:brain-reflect`, and the agent writes the reflection itself.
 
 ## 1. Install the plugin
 
@@ -27,7 +27,7 @@ When you enable the plugin, Claude Code asks for three settings:
 
 | setting | default | |
 |---|---|---|
-| Anthropic API key | empty | Kept in your system's credential store. Leave it empty if `ANTHROPIC_API_KEY` is already set in your environment or in the project's `.env`, or if you use `ant auth login`. |
+| Anthropic API key | empty | Kept in your system's credential store. The plugin uses only this key. Without it the automatic notes stay off, and `/reflect:brain-reflect` still works. |
 | Reflection model | `claude-opus-5-5` | The model that writes the note. The judge is always Claude Haiku 5.5 unless you set `REFLECT_JUDGE_MODEL`. |
 | Spend cap per session (USD) | `0.5` | reflect stops calling the API in a session once its calls there have cost this much. |
 
@@ -43,12 +43,12 @@ On a fresh project with no key in the environment, it prints something like:
 
 ```
 ok    node >= 20               24.13.0
-warn  credentials              none in env; the SDK may still find an `ant auth login` profile
+warn  credentials              none in the environment; the SDK may still find an `ant auth login` profile
 ok    enabled here             <your project directory>
 warn  sessions recorded        none yet (normal before the first prompt)
 ```
 
-A `warn` on `sessions recorded` is normal before the first prompt. A `warn` on `credentials` is fine if you set the key in the plugin settings or use `ant auth login`; `doctor` cannot see either from a terminal. When a key is found it says `API key found (env, .env or plugin setting)`.
+A `warn` on `sessions recorded` is normal before the first prompt. A `warn` on `credentials` is expected when the key is in the plugin settings, because `doctor` run from a terminal cannot see it. The `status` output after a few messages is the real test. Outside the plugin, a key it finds shows as `API key found (environment or .env)`.
 
 ## 3. Work as usual
 
@@ -87,12 +87,11 @@ Inside Claude Code:
 
 ```
 /reflect:brain-reflect
-/reflect:brain-reflect 10
 ```
 
-This sends your last N judged messages (default 6, at most 12) to the reflection model right away, whether or not the trigger fired, and tells it some of them may not be pushback. The agent then tells you what the pattern is and what it will change. With no key, or before any message has been judged, the command prints `No outside reflection is available, so write one yourself from this conversation instead (see below).` and the agent writes the reflection from the conversation.
+This lists which of your last six judged messages read as pushback, with the words the judge quoted, and the note reflect last gave the agent, if there is one. The agent then writes the reflection itself: what it has been doing that you keep redirecting, and what it will change. The command makes no API call, because Claude Code passes the plugin's key to its hooks but not to its commands.
 
-From a terminal, `npx @chanjoongx/reflect manual --turns 10` does the same and prints the note.
+From a terminal, `npx @chanjoongx/reflect manual --turns 10` sends your last 10 judged messages to the reflection model, using a key from your environment, and prints the note.
 
 ## 6. Turn it off
 
@@ -110,17 +109,17 @@ npm install -g @chanjoongx/reflect
 reflect init
 ```
 
-`reflect init` prints the hook settings to merge into `.claude/settings.local.json`. They have the same shape as the plugin's `hooks/hooks.json`, with an absolute path to the installed bundle, because hook arguments do not pass through a shell:
+`reflect init` prints the hook settings to merge into `.claude/settings.local.json`. They have the same shape as the plugin's `plugin/hooks/hooks.json`, with an absolute path to the installed bundle, because hook arguments do not pass through a shell:
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "session-start"], "timeout": 10 }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "session-start"], "timeout": 10 }] }],
     "UserPromptSubmit": [{ "hooks": [
-      { "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "prompt"], "timeout": 10 },
-      { "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "judge"], "async": true }
+      { "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "prompt"], "timeout": 10 },
+      { "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "judge"], "async": true }
     ] }],
-    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "tool"], "timeout": 10 }] }]
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "tool"], "timeout": 10 }] }]
   }
 }
 ```

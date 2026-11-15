@@ -1,4 +1,4 @@
-hooks/reflect-hook.mjs and hooks/lib/ bundle the following packages. reflect itself is MIT (see LICENSE).
+plugin/hooks/reflect-hook.mjs and plugin/hooks/lib/ bundle the following packages. reflect itself is MIT (see LICENSE).
 
 @anthropic-ai/sdk@1.5.0 (Apache-2.0)
 ------------------------------------------------------------

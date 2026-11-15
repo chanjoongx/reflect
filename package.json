@@ -1,6 +1,6 @@
 {
   "name": "@chanjoongx/reflect",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publishConfig": {
     "access": "public"
   },
@@ -10,19 +10,13 @@
     "node": ">=20.0.0"
   },
   "bin": {
-    "reflect": "hooks/reflect-hook.mjs"
+    "reflect": "plugin/hooks/reflect-hook.mjs"
   },
   "files": [
-    "hooks/hooks.json",
-    "hooks/reflect-hook.mjs",
-    "hooks/lib/",
-    "hooks/THIRD_PARTY_LICENSES.txt",
-    "commands/",
-    ".claude-plugin/plugin.json",
+    "plugin/",
     ".env.example",
     "README.md",
     "ARCHITECTURE.md",
-    "PRIVACY.md",
     "CHANGELOG.md",
     "LICENSE"
   ],

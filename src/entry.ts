@@ -1,4 +1,4 @@
-// src/entry.ts: what `node hooks/reflect-hook.mjs` and the npm `reflect` bin run.
+// src/entry.ts: what `node plugin/hooks/reflect-hook.mjs` and the npm `reflect` bin run.
 // Kept apart from src/hook/main.ts so tests can import main() without running it.
 
 import { HOOK_MODES, WORKER_MODE } from "./hook/run.js";

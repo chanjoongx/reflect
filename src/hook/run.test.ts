@@ -186,6 +186,11 @@ test("guidance is delivered exactly once, mid-turn, as additionalContext", async
     assert.match(text, /Edit only the file the developer names/);
     assert.match(text, /It may be wrong if:/);
     assert.equal(JSON.parse(first as string).hookSpecificOutput.hookEventName, "PostToolUse");
+    // The developer sees every note the agent gets.
+    const notice = (JSON.parse(first as string) as { systemMessage: string }).systemMessage;
+    assert.match(notice, /^reflect: sent the agent a note\./);
+    assert.match(notice, /Pattern: .+/);
+    assert.match(notice, /Adjustment: Edit only the file the developer names/);
 
     assert.equal(await runHook("tool", { session_id: "S", cwd: w.dir }, w.dir, w.deps), null);
     assert.equal(await runHook("prompt", input(w, "p4", "ok continue"), w.dir, w.deps), null);
@@ -312,6 +317,18 @@ test("the project .env contributes only reflect's own keys and never overrides",
     assert.equal(env["REFLECT_POLICY"], "k3w8");
     assert.equal(env["REFLECT_MODEL"], "from-env");
     assert.equal(env["DATABASE_URL"], undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("as a plugin, the project .env gives reflect settings but never a key", () => {
+  const dir = mkdtempSync(join(tmpdir(), "reflect-env-plugin-"));
+  try {
+    writeFileSync(join(dir, ".env"), 'ANTHROPIC_API_KEY="sk-from-file"\nREFLECT_POLICY=k3w8\n');
+    const env = withProjectEnv(dir, { CLAUDE_PLUGIN_ROOT: "/plugins/reflect" });
+    assert.equal(env["ANTHROPIC_API_KEY"], undefined);
+    assert.equal(env["REFLECT_POLICY"], "k3w8");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

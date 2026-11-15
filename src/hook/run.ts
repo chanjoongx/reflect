@@ -32,7 +32,7 @@ import { Accumulator, policyById, type TriggerPolicy } from "../trigger/accumula
 import type { EvidenceTurn, ReflectionOptions, ReflectionResult } from "../reflect/reflection.js";
 import { formatForAgent, formatMarkdown } from "../reflect/format.js";
 import { capCostUSD } from "../pricing.js";
-import { resolveApiKey } from "../api/credentials.js";
+import { pluginMode, resolveApiKey } from "../api/credentials.js";
 import { safeTruncate, safeTruncateEnd, redactString } from "../redact.js";
 import {
   appendEvent,
@@ -77,7 +77,7 @@ export interface HookDeps {
   reflect: (turns: EvidenceTurn[], window: number, opts: ReflectionOptions) => Promise<ReflectionResult>;
   readTranscript: (path: string) => string | null;
   /** Tests inject a client; otherwise each call builds one from the key in `env`. */
-  makeClient?: () => import("@anthropic-ai/sdk").default;
+  makeClient?: () => import("../api/client.js").MessagesClient;
   /**
    * Start the reflection for a fire in a process that outlives this one, and
    * return true if it started. Without it, or when it returns false, the judge
@@ -163,6 +163,9 @@ export function loadConfig(env: NodeJS.ProcessEnv): HookConfig {
 }
 
 const ENV_KEYS = /^(ANTHROPIC_API_KEY|REFLECT_[A-Z_]+)$/;
+// As an installed plugin, reflect takes its key only from the plugin setting,
+// so a project's .env contributes REFLECT_* settings and nothing else.
+const ENV_KEYS_PLUGIN = /^REFLECT_[A-Z_]+$/;
 
 /** `"quoted"` or `'quoted'` as written; otherwise trimmed, with a trailing ` # comment` dropped. */
 function dotenvValue(raw: string): string {
@@ -185,9 +188,10 @@ export function withProjectEnv(projectDir: string, env: NodeJS.ProcessEnv): Node
   } catch {
     return out;
   }
+  const allowed = pluginMode(env) ? ENV_KEYS_PLUGIN : ENV_KEYS;
   for (const line of raw.split(/\r?\n/)) {
     const m = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=(.*)$/.exec(line);
-    if (!m || !m[1] || !ENV_KEYS.test(m[1])) continue;
+    if (!m || !m[1] || !allowed.test(m[1])) continue;
     if (out[m[1]] !== undefined && out[m[1]] !== "") continue;
     out[m[1]] = dotenvValue(m[2] ?? "");
   }
@@ -225,10 +229,23 @@ export function promptIdOf(input: HookInput): string {
   return `h${shortHash(input.prompt ?? "")}`;
 }
 
-function output(mode: HookMode, context: string): string {
+// Every note the agent receives is also shown to the developer, so nothing
+// reaches the agent's context that the developer cannot see.
+function output(mode: HookMode, context: string, notice: string): string {
   return JSON.stringify({
+    systemMessage: notice,
     hookSpecificOutput: { hookEventName: EVENT_NAME[mode], additionalContext: context },
   });
+}
+
+export function noticeFor(g: GuidanceEvent, again = false): string {
+  const r = g.reflection;
+  return [
+    again ? "reflect: sent the agent its current note again after compaction." : "reflect: sent the agent a note.",
+    `Pattern: ${r.pattern}`,
+    `Adjustment: ${r.adjustment}`,
+    "The full note is in .reflect/session-guidance.md.",
+  ].join("\n");
 }
 
 type GuidanceEvent = Extract<HookEvent, { t: "guidance" }>;
@@ -316,7 +333,7 @@ export async function runHook(
         const g = activeGuidance(events) ?? pendingGuidance(events);
         if (!g) return null;
         appendEvent(projectDir, sessionId, { t: "delivered", at: now(), id: g.id, via: "session-start" });
-        return output(mode, contextFor(g, events));
+        return output(mode, contextFor(g, events), noticeFor(g, true));
       }
 
       case "prompt": {
@@ -380,7 +397,7 @@ function deliver(mode: HookMode, projectDir: string, sessionId: string): string 
     id: g.id,
     via: mode === "tool" ? "tool" : "prompt",
   });
-  return output(mode, contextFor(g, events));
+  return output(mode, contextFor(g, events), noticeFor(g));
 }
 
 export async function judgeTurn(

@@ -38,7 +38,7 @@ jobs:
       - name: Verify 5-surface version sync
         run: |
           PKG_VER=$(node -p "require('./package.json').version")
-          PLUGIN_VER=$(node -p "require('./.claude-plugin/plugin.json').version")
+          PLUGIN_VER=$(node -p "require('./plugin/.claude-plugin/plugin.json').version")
           LOCK_VER=$(node -p "require('./package-lock.json').version")
           SRC_VER=$(grep -oP 'VERSION = "\K[0-9]+\.[0-9]+\.[0-9]+(?=")' src/version.ts | head -1)
           BUG_VER=$(grep -oP 'placeholder: "\K[0-9]+\.[0-9]+\.[0-9]+(?=")' .github/ISSUE_TEMPLATE/bug.yml | head -1)

@@ -17,7 +17,7 @@ npx @chanjoongx/reflect status
 
 **`judged` stays at 0 and `skipped` goes up.** The first message of a session is never judged, because there is no agent turn yet to push back on. Neither is a message sent before the agent replied to the previous one. Both are logged as `skip` events with reason `session_opener` or `consecutive_user_message`. If every message is skipped, look at the `errors` line instead.
 
-**Pushback is recorded but no note arrives.** The default policy `k2w6` needs 2 pushback verdicts within 6 of your messages, and after a fire it waits 3 messages before it can fire again. The judge also misses about half of real pushback in the benchmark, mostly by reading a correction as a new instruction ([`bench/FINDINGS.md`](../bench/FINDINGS.md) §9). To get a note now, run `/reflect:brain-reflect`. To see the trigger fire on every pushback, set `REFLECT_POLICY=each`.
+**Pushback is recorded but no note arrives.** The default policy `k2w6` needs 2 pushback verdicts within 6 of your messages, and after a fire it waits 3 messages before it can fire again. The judge also misses about half of real pushback in the benchmark, mostly by reading a correction as a new instruction ([`bench/FINDINGS.md`](../bench/FINDINGS.md) §9). To get a note now, run `reflect manual` from a terminal, or run `/reflect:brain-reflect` and the agent reflects on its own. To see the trigger fire on every pushback, set `REFLECT_POLICY=each`.
 
 ## The `errors` line
 
@@ -27,29 +27,30 @@ npx @chanjoongx/reflect status
 |---|---|---|
 | `auth` | The judge got a 401 or 403, or found no credentials at all. After this the hooks make no more API calls in the session. | Fix the key (see below) and start a new session. |
 | `judge` | The judge call failed for another reason: a timeout (30 s, 2 retries), a rate limit or server error that outlasted the retries, `judge refused (...)`, or `judge returned no text (stop_reason=...)`. That message is not judged; the next one is tried normally. | Usually nothing. If it repeats, check the Anthropic status page and your rate limits. |
-| `reflection` | The reflection call failed: `reflection declined by the model`, `reflection returned no text (stop_reason=...)`, a schema parse error, or a network error. The fire is recorded but no note is written. | Run `/reflect:brain-reflect` to try again by hand. |
+| `reflection` | The reflection call failed: `reflection declined by the model`, `reflection returned no text (stop_reason=...)`, a schema parse error, or a network error. The fire is recorded but no note is written. | Run `reflect manual` from a terminal to try again, or `/reflect:brain-reflect` to have the agent reflect without an API call. |
 | `prompt`, `tool`, `session-start` | Something failed inside a hook that does not call the API, almost always a file under `.reflect/` that could not be read or written. | Check that the project directory is writable. |
 
 A hook never fails your turn. Every error ends up in this log and nowhere else, so `status` is the place to look.
 
 ## Credentials
 
-The key is taken from the first of these that is set:
+As a plugin, reflect uses only the plugin's Anthropic API key setting. A key in the environment or in the project's `.env`, and an `ant auth login` profile, are ignored. If the setting is empty, the judge logs one `auth` error per session and the automatic path stays off; `/reflect:brain-reflect` still works because the agent writes the reflection itself. A key you add takes effect in the next session.
+
+With hooks wired by hand, or the CLI, the key is taken from the first of these that is set:
 
 1. `ANTHROPIC_API_KEY` in the environment Claude Code runs in.
 2. `ANTHROPIC_API_KEY` in the project's `.env`. reflect reads only `ANTHROPIC_API_KEY` and `REFLECT_*` lines from that file and never overrides a value the environment already has.
-3. The plugin's Anthropic API key setting.
-4. Whatever the Anthropic SDK finds on its own, such as an `ant auth login` profile.
+3. Whatever the Anthropic SDK finds on its own, such as an `ant auth login` profile.
 
-A Claude subscription login is not on that list. With only a subscription, the judge logs an `auth` error and the automatic path stays off; `/reflect:brain-reflect` still works because the agent writes the reflection itself.
+A Claude subscription login gives the hooks no key in either case.
 
-`doctor` run from a terminal cannot see the plugin setting or an `ant auth login` profile, so it may print `warn  credentials  none in env; ...` while the hooks have a key. The `status` output after a few messages is the real test: verdicts and no `auth` error mean the key works.
+`doctor` run from a terminal cannot see the plugin setting, so it may print `warn  credentials  none in the environment; ...` while the hooks have a key. The `status` output after a few messages is the real test: verdicts and no `auth` error mean the key works.
 
 ## Spend
 
 **`spent $<amount> of $0.5000 cap`, and nothing new is judged.** The session reached its cap and a `skip` event with reason `budget` was logged. Raise the cap with the plugin setting or `REFLECT_MAX_USD_PER_SESSION`; the environment variable wins when both are set. A negative or non-numeric value falls back to 0.5, and 0 stops all API calls.
 
-**The total is a little over the cap.** The cap is checked before each judge call and before each reflection. Judge calls that were already running when the cap was reached still finish. `reflect manual` and `/reflect:brain-reflect` do not check the cap at all, though their cost counts toward it.
+**The total is a little over the cap.** The cap is checked before each judge call and before each reflection. Judge calls that were already running when the cap was reached still finish. `reflect manual` does not check the cap, though its cost counts toward it. `/reflect:brain-reflect` makes no API call.
 
 **Spend looks high for a custom model.** Costs come from the price table in `src/pricing.ts`. A `REFLECT_MODEL` or `REFLECT_JUDGE_MODEL` that the table does not list is charged at the table's highest rate, so the cap still stops it. Add the model's prices to the table if you want an accurate figure.
 
@@ -59,7 +60,7 @@ Expected costs are in [cost.md](cost.md).
 
 The judge runs asynchronously so it never delays your prompt. The note for a message therefore reaches the agent at its next tool call, which is usually partway through its answer to that same message. If the agent answers without using tools, the note waits for your next message.
 
-Each note is delivered once, even when the agent runs several tools in parallel, and never into a subagent's context. It is delivered again only if Claude Code compacts or resumes the session while the note is still in force, because compaction rewrites the context it was delivered into. After `expires_after_turns` of your messages (3 to 12, chosen by the reflection model) it is dropped.
+Each note is delivered once, even when the agent runs several tools in parallel, and never into a subagent's context. You see a `reflect: sent the agent a note` message each time. It is delivered again only if Claude Code compacts or resumes the session while the note is still in force, because compaction rewrites the context it was delivered into. After `expires_after_turns` of your messages (3 to 12, chosen by the reflection model) it is dropped.
 
 ## Too many notes, or wrong ones
 
@@ -73,7 +74,11 @@ Every note carries the reviewer's confidence, a false-trigger likelihood and its
 - `.claude/rules/reflect-rules.md`.
 - Old files in `.reflect/` such as `state.json`, `trigger.log` and `session-log.jsonl`. 0.2 keeps its own log under `.reflect/sessions/`.
 
-An `ANTHROPIC_API_KEY` line in the project's `.env` still works.
+An `ANTHROPIC_API_KEY` line in the project's `.env` works only with hooks wired by hand. The plugin uses its own setting.
+
+## Upgrading from 0.2.0
+
+0.2.1 moved the plugin into the repository's `plugin/` folder. A marketplace install picks that up on update. If you load a clone with `--plugin-dir`, point it at `plugin/`. As a plugin, reflect no longer reads a key from the environment or `.env`, so enter it in the plugin's settings.
 
 ## Asking for help
 

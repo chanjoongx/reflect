@@ -48,6 +48,8 @@ Apply the adjustment.
 The developer's own words in the current turn take precedence over this note.
 ```
 
+You see each note too. When the agent receives one, reflect shows a message in your session with the pattern and the adjustment.
+
 Everything reflect keeps is in `.reflect/` in your project, which ignores itself in git. Sessions are deleted after 7 days. Nothing is shared between sessions.
 
 ## How well it works
@@ -86,9 +88,9 @@ In Claude Code 2.1.275 or later:
 
 On older versions, run `/plugin marketplace add chanjoongx/reflect`, then `/plugin install reflect@chanjoongx`.
 
-The automatic path calls the Anthropic API directly, so it needs an API key. Claude Code asks for one when you enable the plugin (it is kept in your system's credential store). You can leave it empty if `ANTHROPIC_API_KEY` is already set in your environment or in the project's `.env`, or if you use `ant auth login`. A Claude subscription login on its own is not enough for the hooks. `/reflect:brain-reflect` still works without a key: the agent writes the reflection itself.
+The automatic path calls the Anthropic API directly, so it needs an API key. Claude Code asks for one when you enable the plugin and keeps it in your system's credential store. The plugin uses that key and no other: it ignores `ANTHROPIC_API_KEY`, `.env` files and `ant auth login` profiles, and it sends the key only to `api.anthropic.com`. A Claude subscription login on its own is not enough for the hooks. `/reflect:brain-reflect` works without a key, because the agent writes the reflection itself.
 
-You need `node` 20 or later on your `PATH`. The hook is a bundled file in this repository with no dependencies to install.
+You need `node` 20 or later on your `PATH`. The plugin is the [`plugin/`](plugin/) folder of this repository: the hook bundle, which has nothing to install, the command, and the plugin's own [README](plugin/README.md).
 
 Without the plugin system:
 
@@ -97,6 +99,8 @@ npm install -g @chanjoongx/reflect
 reflect init     # prints the hook settings to paste into .claude/settings.local.json
 reflect doctor   # checks node, the key and the wiring
 ```
+
+Outside the plugin, reflect takes the key from `ANTHROPIC_API_KEY`, the project's `.env` or an `ant auth login` profile.
 
 ## Cost
 
@@ -113,9 +117,9 @@ reflect stops calling the API in a session once it has spent $0.50 there. Change
 
 | command | what it does |
 |---|---|
-| `/reflect:brain-reflect [N]` | Reflect on your last N judged messages now (default 6), whether or not the trigger fired |
+| `/reflect:brain-reflect` | Lists which of your last six judged messages read as pushback and has the agent reflect on them. No API call |
 | `reflect status` | What reflect has seen in the latest session: turns judged, pushbacks, notes, spend, errors |
-| `reflect manual [--turns N]` | The same as the slash command, from a terminal |
+| `reflect manual [--turns N]` | From a terminal: the reflection model reads your last N judged messages (default 6) and writes a note, whether or not the trigger fired |
 | `reflect doctor` | Checks node, credentials, the hook bundle and `.reflect/` |
 | `reflect off`, `reflect on` | Turns reflect off or on for this project |
 | `reflect init` | Prints hook settings for use without the plugin |
@@ -128,7 +132,7 @@ All optional.
 
 | variable | default | |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | | Or the plugin setting, or `ant auth login` |
+| `ANTHROPIC_API_KEY` | | Outside the plugin only, or `ant auth login`. The plugin uses its own API key setting |
 | `REFLECT_POLICY` | `k2w6` | Trigger: `k2w4`, `k2w6`, `k2w8`, `k3w8`, `k2w6-med` (medium confidence or above), `each` |
 | `REFLECT_MODEL` | `claude-opus-5-5` | The reflection model |
 | `REFLECT_EFFORT` | `high` | `low` to `max` |
@@ -136,24 +140,24 @@ All optional.
 | `REFLECT_MAX_USD_PER_SESSION` | `0.5` | Spend cap per session |
 | `REFLECT_DISABLED` | | `1` turns every hook into a no-op |
 
-From a project's `.env`, reflect reads only `ANTHROPIC_API_KEY` and `REFLECT_*`, and never overrides the environment.
+From a project's `.env`, reflect reads only `REFLECT_*` (and, outside the plugin, `ANTHROPIC_API_KEY`), and never overrides the environment.
 
 ## What leaves your machine
 
-Each judged message goes to the Anthropic API with your key: the message (up to 2,500 characters) and a summary of the agent's previous turn (its last 14 tool names with their file or command, and the last 1,400 characters of what it said). A reflection sends the turns that triggered it. Before anything is sent, reflect replaces home directory paths, email addresses, phone numbers and common API key formats with placeholders. Details are in [`PRIVACY.md`](PRIVACY.md).
+Each judged message goes to the Anthropic API with your key: the message (up to 2,500 characters) and a summary of the agent's previous turn (its last 14 tool names with their file or command, and the last 1,400 characters of what it said). A reflection sends the turns that triggered it. Before anything is sent, reflect replaces home directory paths, email addresses, phone numbers and common API key formats with placeholders. Details are in [`plugin/PRIVACY.md`](plugin/PRIVACY.md).
 
 ## Development
 
 ```bash
 npm install
 npm test               # typecheck and unit tests; the model calls are faked
-npm run build          # bundles src/ into hooks/reflect-hook.mjs and hooks/lib/
+npm run build          # bundles src/ into plugin/hooks/reflect-hook.mjs and plugin/hooks/lib/
 npm run smoke          # runs the bundle the way Claude Code does
-claude --plugin-dir .  # try the working copy in a session
+claude --plugin-dir ./plugin  # try the working copy in a session
 ```
 
-The committed bundle must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
+Claude Code installs only `plugin/`, and that folder is also what Anthropic's plugin directory reviews. The source, the benchmark, the viewer and the docs stay out of it. The committed bundle must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
 
 ## License
 
-MIT. The bundled Anthropic SDK and its dependencies are listed with their licenses in [`hooks/THIRD_PARTY_LICENSES.txt`](hooks/THIRD_PARTY_LICENSES.txt).
+MIT. The bundled Anthropic SDK and its dependencies are listed with their licenses in [`plugin/hooks/THIRD_PARTY_LICENSES.txt`](plugin/hooks/THIRD_PARTY_LICENSES.txt).

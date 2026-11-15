@@ -20,7 +20,7 @@
 const RE = (source: string, flags?: string) => new RegExp(source, flags);
 
 // Assembled at run time: a bundler folds "a" + "b" into one literal, which would put
-// the very strings these patterns exist to hide into hooks/lib/ (found 2026-11-16).
+// the very strings these patterns exist to hide into plugin/hooks/lib/ (found 2026-11-16).
 const RESUME_MARKER = ["resume_", "chanj", "oong"].join("");
 const LEGACY_TICKET = ["21547398", "2749776"].join("");
 

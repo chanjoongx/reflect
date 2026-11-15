@@ -2,11 +2,11 @@
 
 reflect 0.2 is a Claude Code plugin that watches how the developer responds to the agent. When two of the developer's messages in a short stretch are pushback (a correction, a rejection or a report that something is broken), a stronger model reads those turns and writes a short note. The agent receives the note before its next step.
 
-Everything runs from one TypeScript source tree in `src/`. `scripts/build-hook.mjs` bundles it into `hooks/reflect-hook.mjs`, which is committed, and the npm `reflect` bin is that same file. Nothing is kept between sessions, and nothing is written outside the project's `.reflect/` directory.
+Everything runs from one TypeScript source tree in `src/`. `scripts/build-hook.mjs` bundles it into `plugin/hooks/reflect-hook.mjs`, which is committed, and the npm `reflect` bin is that same file. The installable plugin is the `plugin/` folder: the manifest, `hooks/hooks.json`, the bundle, the `/brain-reflect` command, the plugin's README and its privacy policy. Nothing is kept between sessions, and nothing is written outside the project's `.reflect/` directory.
 
 ## The hook flow
 
-`hooks/hooks.json` registers four hook commands, all of the form `node ${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs <mode>`. The dispatch is in `src/hook/main.ts`; what each mode does is in `src/hook/run.ts`.
+`plugin/hooks/hooks.json` registers four hook commands, all of the form `node ${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs <mode>`. The dispatch is in `src/hook/main.ts`; what each mode does is in `src/hook/run.ts`.
 
 ```mermaid
 flowchart TD
@@ -51,7 +51,7 @@ This is `judgeTurn` in `src/hook/run.ts`.
 4. **Judge.** `src/detect/judge.ts` sends the pair to Claude Haiku 5.5 with a JSON-schema output format. The label is one of seven; `correction`, `rejection` and `failure_report` count as pushback, while `instruction`, `question`, `affirmation` and `other` do not. Thinking is off and effort is low.
 5. **Trigger.** `src/trigger/accumulator.ts` replays every verdict in the session through a sliding window counted in developer turns. The default policy `k2w6` fires on 2 pushbacks within 6 turns, then waits 3 turns before it can fire again. `REFLECT_POLICY` picks another: `each`, `k2w4`, `k2w8`, `k3w8` or `k2w6-med` (which ignores low-confidence verdicts).
 6. **Reflection.** `src/reflect/reflection.ts` sends exactly the turns that tripped the trigger to Claude Opus 5.5. Each turn carries a summary of what the agent had just done, the developer's words and the span the judge quoted as evidence. The call uses adaptive thinking at effort `high`, and the server-side fallback beta, so a refusal is retried on a fallback model inside the same request. It runs in a separate process (`reflect-worker`) that the judge hook starts detached: `claude -p` ends the hook's process as soon as the agent answers, which in a short turn comes before the reflection does (a live test on 2026-11-16 lost its first note this way). If the worker cannot start, the judge hook runs the reflection itself. The output schema (`src/reflect/schema.ts`) has `pattern`, `signal`, `adjustment`, `confidence`, `scope`, `false_trigger_likelihood`, `counter_hypothesis`, `verify` and `expires_after_turns` (3 to 12).
-7. **Delivery.** `src/reflect/format.ts` turns the reflection into at most 2,400 characters of `additionalContext`. The next `tool` or `prompt` hook hands it to the agent and records a `delivered` event, so it arrives once. A copy goes to `.reflect/session-guidance.md` for the developer.
+7. **Delivery.** `src/reflect/format.ts` turns the reflection into at most 2,400 characters of `additionalContext`. The next `tool` or `prompt` hook hands it to the agent and records a `delivered` event, so it arrives once. The same hook output carries a `systemMessage` with the note's pattern and adjustment, so the developer sees what the agent was told, and a copy goes to `.reflect/session-guidance.md`.
 
 `reflect manual` and the `/reflect:brain-reflect` command do not wait for the trigger. They send the last N judged turns (default 6, at most 12) to the reflection model and tell it some of them may not be pushback. They do not check the spend cap.
 
@@ -95,13 +95,13 @@ The one step that reads, decides and writes is the trigger. It runs under an exc
 
 ### One bundled hook
 
-A plugin install is a git clone: there is no `npm install` and no build step on the user's machine. So the hook ships as committed ES modules with the Anthropic SDK inside them, and the package has no runtime dependencies. The entry file is about 44 KB. The SDK sits in a chunk of about 1 MB under `hooks/lib/` that only the judge and the reflection import, so the `prompt`, `tool` and `session-start` hooks, which run on every message and tool call, never parse it. `npm run check:bundle` fails CI if the committed bundle does not match `src/`.
+A plugin install copies the `plugin/` folder: there is no `npm install` and no build step on the user's machine. So the hook ships as committed ES modules with the Anthropic SDK inside them, and the package has no runtime dependencies. The entry file is about 48 KB. `src/api/client.ts` loads the SDK in three pieces, the client core, the Messages API and the beta Messages API, and only the judge and the reflection load them, so the `prompt`, `tool` and `session-start` hooks, which run on every message and tool call, never parse the SDK. Loaded that way, the bundler keeps only the parts reflect calls (about 530 KB in all, against 1.3 MB for the whole SDK), and no file passes 256 KiB, the size at which Anthropic's plugin directory holds a file for a reviewer. The build fails if one does. `npm run check:bundle` fails CI if the committed bundle does not match `src/`.
 
 0.1 had the same detector in five implementations (two bash hooks, two PowerShell hooks and a TypeScript reference), documented as divergent.
 
 ## Credentials and spend
 
-The key comes from, in order: `ANTHROPIC_API_KEY` in the environment, the project's `.env` (only `ANTHROPIC_API_KEY` and `REFLECT_*` are read from it, and they never override the environment), the plugin's `anthropic_api_key` setting, and then whatever the SDK finds on its own, such as an `ant auth login` profile. A Claude subscription login alone does not give the hooks an API key. If the judge fails authentication (a 401 or 403, or no key found), the hooks make no more API calls in that session.
+As an installed plugin, reflect uses one credential, the plugin's `anthropic_api_key` setting, and sends it only to `https://api.anthropic.com`. Claude Code sets `CLAUDE_PLUGIN_ROOT` for a plugin's hooks, which is how they know; the plugin's command passes `--plugin` because commands do not get that variable. In that mode a project's `.env` contributes only `REFLECT_*` lines. Outside the plugin, the key comes from, in order: `ANTHROPIC_API_KEY` in the environment, the project's `.env` (only `ANTHROPIC_API_KEY` and `REFLECT_*` are read from it, and they never override the environment), the plugin setting, and then whatever the SDK finds on its own, such as an `ant auth login` profile. A Claude subscription login alone does not give the hooks an API key. If the judge fails authentication (a 401 or 403, or no key found), the hooks make no more API calls in that session.
 
 Each `verdict` and `guidance` event records its cost from `src/pricing.ts`; a model the table does not list is charged at the table's highest rate. The cap is checked before each judge call and again before each reflection, so only judge calls already in flight can take a session past it. Estimates are in [`docs/cost.md`](docs/cost.md).
 

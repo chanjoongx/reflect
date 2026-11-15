@@ -3,7 +3,7 @@
 // v0.1.4 shipped one specification in five implementations (two bash hooks, two
 // PowerShell hooks, a TypeScript reference that its own header called
 // divergent). v0.2 has one: src/entry.ts calls this, and scripts/build-hook.mjs
-// bundles it with its dependencies into hooks/reflect-hook.mjs, so a plugin
+// bundles it with its dependencies into plugin/hooks/reflect-hook.mjs, so a plugin
 // install needs nothing but `node`, and the npm `reflect` bin is the same file.
 //
 //   node reflect-hook.mjs <session-start|prompt|judge|tool>   (from hooks.json, JSON on stdin)

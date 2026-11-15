@@ -3,8 +3,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hasCredentials, resolveApiKey } from "../api/credentials.js";
-import { isPushback } from "../detect/types.js";
+import { hasCredentials, pluginMode, resolveApiKey } from "../api/credentials.js";
+import { isPushback, type Label } from "../detect/types.js";
 import { formatForAgent } from "../reflect/format.js";
 import type { EvidenceTurn } from "../reflect/reflection.js";
 import {
@@ -26,12 +26,14 @@ USAGE
   reflect status [--session ID]   What reflect has seen in the latest (or given) session
   reflect manual [--turns N]      Reflect on the last N judged turns now (default 6)
                   [--agent]       Output for the /brain-reflect command: always exits 0
+                  [--plugin]      Set by the plugin's command: use the plugin's key rules
   reflect doctor                  Check node, credentials and the hook bundle
   reflect init                    Print the hook settings for a project that does not use the plugin
   reflect off | on                Disable or re-enable reflect for this project
 
 ENVIRONMENT (all optional)
-  ANTHROPIC_API_KEY               Or the plugin's anthropic_api_key setting, or \`ant auth login\`
+  ANTHROPIC_API_KEY               Outside the plugin, or \`ant auth login\`. The plugin's hooks use only
+                                  the API key entered in the plugin's settings
   REFLECT_JUDGE_MODEL             Default claude-haiku-5-5
   REFLECT_MODEL                   Reflection model. Default claude-opus-5-5
   REFLECT_EFFORT                  low|medium|high|xhigh|max. Default high
@@ -113,6 +115,22 @@ function cmdStatus(argv: string[]): number {
   return 0;
 }
 
+function printRecorded(events: HookEvent[], turns: EvidenceTurn[], forAgent: boolean): void {
+  const pushbacks = turns.filter((t) => isPushback(t.label as Label));
+  console.log(`reflect: of your last ${turns.length} judged messages, ${pushbacks.length} read as pushback.`);
+  for (const t of pushbacks) console.log(`  turn ${t.turn} (${t.label}, ${t.confidence}): "${t.evidence}"`);
+  const g = activeGuidance(events) ?? pendingGuidance(events);
+  if (g) {
+    console.log("");
+    console.log("The note reflect last gave the agent:");
+    console.log(formatForAgent(g.reflection, { pushbacks: 0, window: 0, turns: [], manual: true }));
+  }
+  if (forAgent) {
+    console.log("");
+    console.log(NO_REFLECTION_FOR_AGENT);
+  }
+}
+
 const NO_REFLECTION_FOR_AGENT =
   "No outside reflection is available, so write one yourself from this conversation instead (see below).";
 
@@ -147,6 +165,13 @@ async function cmdManual(argv: string[]): Promise<number> {
     evidence: v.evidence,
   }));
   const env = withProjectEnv(dir, process.env);
+  if (pluginMode(env) && !resolveApiKey(env)) {
+    // Claude Code passes the plugin's key to its hooks but not to its commands,
+    // so the plugin's /brain-reflect makes no API call. It hands the agent what
+    // the hooks recorded, and the agent writes the reflection itself.
+    printRecorded(events, turns, forAgent);
+    return 0;
+  }
   const cfg = loadConfig(env);
   const last = verdicts[verdicts.length - 1] as Extract<HookEvent, { t: "verdict" }>;
   const res = await reflectAndRecord(turns, cfg, dir, sid, last.promptId, defaultDeps(env), true);
@@ -176,8 +201,10 @@ function cmdDoctor(): number {
   rows.push([
     "credentials",
     hasCredentials(env),
-    key ? "API key found (env, .env or plugin setting)" :
-      "none in env; the SDK may still find an `ant auth login` profile",
+    pluginMode(env)
+      ? key ? "API key from the plugin setting" : "no API key in the plugin setting"
+      : key ? "API key found (environment or .env)"
+        : "none in the environment; the SDK may still find an `ant auth login` profile",
   ]);
   const root = process.env["CLAUDE_PLUGIN_ROOT"];
   if (root) {
@@ -198,10 +225,10 @@ function cmdDoctor(): number {
 /** This file inside the bundle; the bundle next to src/ when run from source. */
 function bundlePath(): string {
   const here = fileURLToPath(import.meta.url);
-  return here.endsWith(".mjs") ? here : resolve(dirname(here), "..", "..", "hooks", "reflect-hook.mjs");
+  return here.endsWith(".mjs") ? here : resolve(dirname(here), "..", "..", "plugin", "hooks", "reflect-hook.mjs");
 }
 
-/** The same wiring as hooks/hooks.json, for settings.local.json instead of a plugin. */
+/** The same wiring as plugin/hooks/hooks.json, for settings.local.json instead of a plugin. */
 export function hookSettings(bundle: string): unknown {
   const hook = (mode: string, extra: Record<string, unknown>) => ({ type: "command", command: "node", args: [bundle, mode], ...extra });
   return {
@@ -227,7 +254,11 @@ function cmdInit(): number {
   return 0;
 }
 
-export async function runCli(argv: string[]): Promise<number> {
+export async function runCli(argvIn: string[]): Promise<number> {
+  // The plugin's command passes --plugin: it runs inside the plugin, but
+  // Claude Code does not set CLAUDE_PLUGIN_ROOT for commands. See api/credentials.ts.
+  const argv = argvIn.filter((a) => a !== "--plugin");
+  if (argv.length !== argvIn.length) process.env["REFLECT_PLUGIN"] = "1";
   const cmd = argv[0];
   switch (cmd) {
     case undefined:

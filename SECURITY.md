@@ -22,9 +22,9 @@ Please do **not** open public GitHub issues for security reports until a fix is 
 
 ## Runtime attack surface
 
-- **No runtime dependencies**: the official Anthropic SDK (`@anthropic-ai/sdk`) is bundled into `hooks/lib/`. Licenses of everything bundled are in `hooks/THIRD_PARTY_LICENSES.txt`.
-- **No network calls** beyond the Anthropic Messages API: one judge call (Claude Haiku 5.5) per judged developer message, and one reflection call (Claude Opus 5.5 by default) when the trigger fires or you run `/reflect:brain-reflect`
-- **The hooks are one Node.js bundle**: `hooks/reflect-hook.mjs`, built from `src/` by `scripts/build-hook.mjs`. CI fails if the committed bundle does not match the source. The hooks read JSON from stdin and the session transcript Claude Code points them to, and write only under `.reflect/` in the project. They never block a prompt or a tool call. Review `src/hook/run.ts` before adopting.
+- **No runtime dependencies**: the official Anthropic SDK (`@anthropic-ai/sdk`) is bundled into `plugin/hooks/lib/`. Licenses of everything bundled are in `plugin/hooks/THIRD_PARTY_LICENSES.txt`.
+- **No network calls** beyond the Anthropic Messages API: one judge call (Claude Haiku 5.5) per judged developer message, and one reflection call (Claude Opus 5.5 by default) when the trigger fires or you run `reflect manual` from a terminal. As a plugin, reflect uses only the API key from its own setting and sends it only to `https://api.anthropic.com`
+- **The hooks are one Node.js bundle**: `plugin/hooks/reflect-hook.mjs`, built from `src/` by `scripts/build-hook.mjs`. CI fails if the committed bundle does not match the source. The hooks read JSON from stdin and the session transcript Claude Code points them to, and write only under `.reflect/` in the project. They never block a prompt or a tool call. Review `src/hook/run.ts` before adopting.
 
 ## Data sent to Anthropic
 
@@ -41,7 +41,7 @@ NOT sent:
 - Environment variables (the API key travels only in the request's authentication header)
 - Data from other sessions (each call is independent)
 
-See [`PRIVACY.md`](PRIVACY.md) for full data handling.
+See [`plugin/PRIVACY.md`](plugin/PRIVACY.md) for full data handling.
 
 ## Scope
 
@@ -59,7 +59,7 @@ Out of scope:
 
 ## Best practices for users
 
-- Prefer the plugin's API key setting, which Claude Code keeps in your system's credential store. If you use a project `.env` instead, never commit it
+- Use the plugin's API key setting, which Claude Code keeps in your system's credential store; the plugin uses no other credential. If you wire the hooks by hand with a project `.env`, never commit it
 - Verify `.env` is gitignored (`git check-ignore .env`)
 - Rotate API key on any suspected exposure
 - For team use, each member uses their own key. Never share one

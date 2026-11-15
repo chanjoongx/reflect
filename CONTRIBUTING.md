@@ -29,24 +29,25 @@ PRs that change either prompt without that evidence are unlikely to merge.
 git clone https://github.com/<your-username>/reflect.git
 cd reflect
 npm install
-npm test               # typecheck and node:test, 116 tests; the model calls are faked
-npm run build          # bundles src/ into hooks/reflect-hook.mjs and hooks/lib/
+npm test               # typecheck and node:test, 133 tests; the model calls are faked
+npm run build          # bundles src/ into plugin/hooks/reflect-hook.mjs and plugin/hooks/lib/
 npm run check:bundle   # fails if the committed bundle does not match src/
 npm run smoke          # runs the bundle under plain node, as Claude Code does, with no API key
 npm run mirror-check   # src/redact.ts must match web/lib/redact.ts
 ```
 
-To try your working copy in a real session, run `claude --plugin-dir .` from the repository root. A gitignored `.claude/settings.json` that points the four hooks at `hooks/reflect-hook.mjs` works too.
+To try your working copy in a real session, run `claude --plugin-dir ./plugin` from the repository root. A gitignored `.claude/settings.json` that points the four hooks at `plugin/hooks/reflect-hook.mjs` works too.
 
-None of these commands calls the API. To exercise the judge or the reflection for real, put a key in your environment and use the plugin; the cost lands on that key.
+None of these commands calls the API. To exercise the judge or the reflection for real, enter a key in the plugin's settings, or put one in your environment when you wire the hooks by hand; the cost lands on that key.
 
 ### Rules for the bundle
 
-- Edit `src/`. Never edit `hooks/reflect-hook.mjs` or `hooks/lib/` by hand.
-- After any change under `src/`, run `npm run build` and commit the rebuilt bundle with the source change. A plugin install is a git clone with no build step, so the committed bundle is what users run. CI runs `check:bundle` and fails on a stale one.
-- The package has no runtime dependencies. The Anthropic SDK is bundled into a chunk under `hooks/lib/` that only the judge and the reflection load. Keep it that way, because the `prompt` and `tool` hooks run on every message and tool call.
+- Edit `src/`. Never edit `plugin/hooks/reflect-hook.mjs` or `plugin/hooks/lib/` by hand.
+- After any change under `src/`, run `npm run build` and commit the rebuilt bundle with the source change. A plugin install copies `plugin/` with no build step, so the committed bundle is what users run. CI runs `check:bundle` and fails on a stale one.
+- The package has no runtime dependencies. The Anthropic SDK is bundled into chunks under `plugin/hooks/lib/` that only the judge and the reflection load. Keep it that way, because the `prompt` and `tool` hooks run on every message and tool call. No bundled file may reach 256 KiB; the build fails if one does.
+- Keep everything the plugin runs inside `plugin/`, and keep `package.json` and `package-lock.json` out of it. When a plugin's root has both, Claude Code installs the lockfile's packages on every user's machine.
 - `src/redact.ts` is the canonical redactor and `web/lib/redact.ts` is a copy for the viewer. Edit the first and copy it over.
-- The version lives in `src/version.ts`, `package.json` and `.claude-plugin/plugin.json`. A test fails if they disagree.
+- The version lives in `src/version.ts`, `package.json` and `plugin/.claude-plugin/plugin.json`. A test fails if they disagree.
 
 CI (`.github/workflows/ci.yml`) runs `npm test`, `check:bundle` and `smoke` on Ubuntu with Node 20 and 24 and on Windows with Node 24, and `mirror-check` on Ubuntu.
 

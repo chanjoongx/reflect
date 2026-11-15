@@ -55,7 +55,7 @@ test("the reflection input carries the developer's words and the judge's evidenc
 
 test("the version is the same in code, package.json and the plugin manifest", () => {
   const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
-  const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")) as { version: string };
+  const plugin = JSON.parse(readFileSync("plugin/.claude-plugin/plugin.json", "utf8")) as { version: string };
   assert.equal(pkg.version, VERSION);
   assert.equal(plugin.version, VERSION);
 });

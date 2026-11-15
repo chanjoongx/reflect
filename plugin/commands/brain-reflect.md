@@ -1,20 +1,19 @@
 ---
 description: Ask reflect now why the developer keeps pushing back in this session
-argument-hint: "[turns to read, 1 to 12, default 6]"
 allowed-tools: Bash(node:*)
 ---
 
 ## What reflect found
 
-!`node "${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs" manual --agent --session "${CLAUDE_SESSION_ID}" --turns $ARGUMENTS`
+!`node "${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs" manual --agent --plugin --session "${CLAUDE_SESSION_ID}"`
 
 ## What to do with it
 
 The developer ran `/brain-reflect` because they want you to step back and look at how this session is going.
 
-If the output above contains a reflect note (it starts with "reflect:" and has a Pattern line), it was written by a separate model that read the developer's recent messages and what you did just before each one. Tell the developer, in two or three sentences, what it says the pattern is and what you will do differently. Then follow its adjustment, unless it says to ask first or the developer's own words say otherwise.
+If the output above contains a reflect note (it has a Pattern line), it was written by a separate model that read the developer's recent messages and what you did just before each one. Tell the developer, in two or three sentences, what it says the pattern is and what you will do differently. Then follow its adjustment, unless it says to ask first or the developer's own words say otherwise.
 
-If the output says no outside reflection is available, write one yourself from this conversation. Look at the developer's last several messages and what you did right before each one. Then tell the developer:
+If the output says no outside reflection is available, write one yourself from this conversation. The turns reflect lists as pushback, with the words it quoted, are a good place to start. Look at the developer's last several messages and what you did right before each one. Then tell the developer:
 
 1. **Pattern**: what you have been doing that the developer keeps redirecting, in one sentence. Name the actual behaviour (for example "editing files beyond the one you named"), not a general trait.
 2. **Signal**: the developer's words that show it, quoted briefly.

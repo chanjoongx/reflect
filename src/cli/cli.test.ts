@@ -12,10 +12,10 @@ type Wiring = Record<string, Group[]>;
 
 const BUNDLE_IN_PLUGIN = "${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs";
 
-const plugin = (JSON.parse(readFileSync("hooks/hooks.json", "utf8")) as { hooks: Wiring }).hooks;
+const plugin = (JSON.parse(readFileSync("plugin/hooks/hooks.json", "utf8")) as { hooks: Wiring }).hooks;
 
 test("hooks.json runs the committed bundle, in exec form, with a known mode", () => {
-  assert.ok(existsSync("hooks/reflect-hook.mjs"), "run npm run build");
+  assert.ok(existsSync("plugin/hooks/reflect-hook.mjs"), "run npm run build");
   for (const groups of Object.values(plugin)) {
     for (const h of groups.flatMap((g) => g.hooks)) {
       assert.equal(h.command, "node");

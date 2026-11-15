@@ -1,15 +1,15 @@
 // scripts/smoke.mjs: run the built bundle the way Claude Code does, with no API key.
-// Checks what unit tests cannot: that hooks/reflect-hook.mjs and its chunks load
+// Checks what unit tests cannot: that plugin/hooks/reflect-hook.mjs and its chunks load
 // under plain `node`, read JSON on stdin, exit 0, and write only under .reflect/.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const bundle = join(root, "hooks", "reflect-hook.mjs");
+const bundle = join(root, "plugin", "hooks", "reflect-hook.mjs");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 let failed = 0;
@@ -57,6 +57,16 @@ try {
   const wk = run(["reflect-worker", dir, "smoke", "no-such-fire"]);
   check("a worker with no matching fire exits 0 and writes nothing", wk.code === 0 && wk.out === "" && wk.err === "" &&
     !readdirSync(join(dir, ".reflect", "sessions", "smoke")).some((f) => f.startsWith("reflecting-")), wk.err);
+
+  // The plugin's /brain-reflect: the command does not receive the plugin's key,
+  // and a key in the environment must not be used in its place.
+  const verdict = { t: "verdict", at: new Date().toISOString(), promptId: "p1", label: "correction", confidence: "high",
+    evidence: "only the parser", rationale: "", priorSummary: "", prompt: "only the parser", model: "smoke", costUSD: 0, latencyMs: 0 };
+  appendFileSync(log, `${JSON.stringify(verdict)}${String.fromCharCode(10)}`);
+  const t0 = Date.now();
+  const man = run(["manual", "--agent", "--plugin", "--session", "smoke"], undefined, { ANTHROPIC_API_KEY: "smoke-test-placeholder-not-a-key", CLAUDE_PROJECT_DIR: dir });
+  check("the plugin's command ignores a key in the environment and makes no API call",
+    man.code === 0 && /1 read as pushback/.test(man.out) && /No outside reflection/.test(man.out) && Date.now() - t0 < 5_000, man.out + man.err);
 
   const bad = spawnSync(process.execPath, [bundle, "prompt"], { input: "{not json", env: baseEnv, encoding: "utf8" });
   check("malformed stdin still exits 0", bad.status === 0, bad.stderr);

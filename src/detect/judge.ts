@@ -15,11 +15,12 @@
 // (observed: label "undo_request", confidence 0.92) — which is exactly the
 // failure mode structured output removes.
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { APIConnectionError, APIError, InternalServerError, RateLimitError } from "@anthropic-ai/sdk/core/error";
 import type { JudgeUsage, JudgeVerdict, Label, Pair } from "./types.js";
 import { LABELS } from "./types.js";
 import { redactString, safeTruncate, safeTruncateEnd } from "../redact.js";
-import { makeClient } from "../api/client.js";
+import { makeClient, type MessagesClient } from "../api/client.js";
 import { PRIOR_TEXT_CHARS, renderPriorTurn } from "./render.js";
 
 import { DEFAULT_JUDGE_MODEL } from "../models.js";
@@ -263,7 +264,7 @@ export type JudgeThinking = "off" | "adaptive";
 
 export interface JudgeOptions {
   /** Injected client (the hook and tests pass one); otherwise built from `apiKey`. */
-  client?: Anthropic;
+  client?: MessagesClient;
   apiKey?: string;
   model?: string;
   /** Omit the prior turn: the stateless-judge ablation. */
@@ -315,9 +316,9 @@ const RETRYABLE_CODES = new Set([
 export function isRetryable(e: unknown): boolean {
   if (e instanceof ParseFailure) return false;
   if (e instanceof RetryableError) return true;
-  if (e instanceof Anthropic.RateLimitError || e instanceof Anthropic.InternalServerError) return true;
-  if (e instanceof Anthropic.APIConnectionError) return true;
-  if (e instanceof Anthropic.APIError) return false;
+  if (e instanceof RateLimitError || e instanceof InternalServerError) return true;
+  if (e instanceof APIConnectionError) return true;
+  if (e instanceof APIError) return false;
   if (!(e instanceof Error)) return false;
   if (e.name === "AbortError" || e.name === "TimeoutError") return true;
   const code = (e as { cause?: { code?: string } }).cause?.code;
@@ -348,11 +349,11 @@ export async function judgePair(pair: Pair, opts: JudgeOptions): Promise<JudgeRe
   const model = opts.model ?? DEFAULT_JUDGE_MODEL;
   const client =
     opts.client ??
-    makeClient({
+    (await makeClient({
       ...(opts.apiKey !== undefined ? { apiKey: opts.apiKey } : {}),
       maxRetries: opts.maxRetries ?? 4,
       timeoutMs: opts.timeoutMs ?? 60_000,
-    });
+    }));
 
   const shaped = thinkingParams(model, opts.thinking, opts.effort);
   const params: Anthropic.MessageCreateParamsNonStreaming = {

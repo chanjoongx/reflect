@@ -10,8 +10,7 @@
 // the span the judge quoted as evidence. The question is no longer "did the
 // developer object?" but "what is the agent repeatedly missing?".
 
-import Anthropic from "@anthropic-ai/sdk";
-import { makeClient } from "../api/client.js";
+import { makeClient, type MessagesClient } from "../api/client.js";
 import { capCostUSD } from "../pricing.js";
 import { redactString, safeTruncate, safeTruncateEnd } from "../redact.js";
 import { parseReflection2, REFLECTION_SCHEMA, type Reflection2 } from "./schema.js";
@@ -94,7 +93,7 @@ export function buildReflectionInput(turns: EvidenceTurn[], window: number, intr
 }
 
 export interface ReflectionOptions {
-  client?: Anthropic;
+  client?: MessagesClient;
   /** Used when no client is injected. */
   apiKey?: string;
   model?: string;
@@ -118,7 +117,7 @@ export async function callReflection(
   opts: ReflectionOptions = {},
 ): Promise<ReflectionResult> {
   const model = opts.model ?? DEFAULT_REFLECTION_MODEL;
-  const client = opts.client ?? makeClient({ ...(opts.apiKey ? { apiKey: opts.apiKey } : {}), timeoutMs: 120_000 });
+  const client = opts.client ?? (await makeClient({ ...(opts.apiKey ? { apiKey: opts.apiKey } : {}), timeoutMs: 120_000 }));
   const input = buildReflectionInput(turns, window, opts.intro);
   const t0 = Date.now();
 

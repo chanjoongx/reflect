@@ -27,7 +27,25 @@ const check = process.argv.includes("--check");
 
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
+// The SDK's agent toolset (a bash session, file tools, skill and memory
+// downloads) is reached only through a dynamic import in code that reflect
+// never calls. esbuild drops that code but still writes the imported module
+// out as a chunk that no file loads. Replace it with an empty module so the
+// plugin ships no shell or download code at all.
+const UNUSED_SDK = /[\\/]@anthropic-ai[\\/]sdk[\\/]tools[\\/]agent-toolset[\\/]node\.mjs$/;
+const dropUnusedSdk = {
+  name: "drop-unused-sdk",
+  setup(b) {
+    b.onResolve({ filter: /agent-toolset[\\/]node(\.mjs)?$/ }, (args) => {
+      const full = resolve(args.resolveDir, args.path);
+      return UNUSED_SDK.test(full) ? { path: full, namespace: "reflect-empty" } : undefined;
+    });
+    b.onLoad({ filter: /.*/, namespace: "reflect-empty" }, () => ({ contents: "export {};", loader: "js" }));
+  },
+};
+
 const result = await build({
+  plugins: [dropUnusedSdk],
   absWorkingDir: root,
   entryPoints: { "reflect-hook": "src/entry.ts" },
   outdir: HOOKS,

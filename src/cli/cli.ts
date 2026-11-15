@@ -4,12 +4,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasCredentials, pluginMode, resolveApiKey } from "../api/credentials.js";
-import { isPushback, type Label } from "../detect/types.js";
+import { isPushback } from "../detect/types.js";
 import { formatForAgent } from "../reflect/format.js";
-import type { EvidenceTurn } from "../reflect/reflection.js";
 import {
   activeGuidance,
   defaultDeps,
+  evidenceTurns,
   loadConfig,
   pendingGuidance,
   promptOrder,
@@ -18,6 +18,7 @@ import {
   withProjectEnv,
 } from "../hook/run.js";
 import { appendEvent, isDisabled, latestSession, now, readEvents, setDisabled, stateRoot, type HookEvent } from "../hook/state.js";
+import { turnTextFor } from "../hook/turns.js";
 import { VERSION } from "../version.js";
 
 const HELP = `reflect ${VERSION}: notices when you keep correcting Claude Code, and tells it why.
@@ -26,7 +27,7 @@ USAGE
   reflect status [--session ID]   What reflect has seen in the latest (or given) session
   reflect manual [--turns N]      Reflect on the last N judged turns now (default 6)
                   [--agent]       Output for the /brain-reflect command: always exits 0
-                  [--plugin]      Set by the plugin's command: use the plugin's key rules
+                  [--plugin]      Set by the plugin's command: list what was recorded, no API call
   reflect doctor                  Check node, credentials and the hook bundle
   reflect init                    Print the hook settings for a project that does not use the plugin
   reflect off | on                Disable or re-enable reflect for this project
@@ -74,7 +75,7 @@ const usd = (v: number) => `$${v.toFixed(v < 0.01 ? 5 : 4)}`;
 
 function summarize(events: HookEvent[]) {
   const prompts = promptOrder(events).length;
-  const verdicts = events.filter((e): e is Extract<HookEvent, { t: "verdict" }> => e.t === "verdict");
+  const verdicts = events.filter((e): e is Verdict => e.t === "verdict");
   const pushbacks = verdicts.filter((v) => isPushback(v.label));
   const skips = events.filter((e) => e.t === "skip").length;
   const fires = events.filter((e) => e.t === "fire").length;
@@ -115,10 +116,16 @@ function cmdStatus(argv: string[]): number {
   return 0;
 }
 
-function printRecorded(events: HookEvent[], turns: EvidenceTurn[], forAgent: boolean): void {
-  const pushbacks = turns.filter((t) => isPushback(t.label as Label));
-  console.log(`reflect: of your last ${turns.length} judged messages, ${pushbacks.length} read as pushback.`);
-  for (const t of pushbacks) console.log(`  turn ${t.turn} (${t.label}, ${t.confidence}): "${t.evidence}"`);
+type Verdict = Extract<HookEvent, { t: "verdict" }>;
+
+function printRecorded(dir: string, sid: string, events: HookEvent[], recent: Verdict[], forAgent: boolean): void {
+  const order = promptOrder(events);
+  const pushbacks = recent.filter((v) => isPushback(v.label));
+  console.log(`reflect: of your last ${recent.length} judged messages, ${pushbacks.length} read as pushback.`);
+  for (const v of pushbacks) {
+    const quote = turnTextFor(dir, sid, v)?.evidence;
+    console.log(`  turn ${order.indexOf(v.promptId) + 1} (${v.label}, ${v.confidence})${quote ? `: "${quote}"` : ""}`);
+  }
   const g = activeGuidance(events) ?? pendingGuidance(events);
   if (g) {
     console.log("");
@@ -146,7 +153,7 @@ async function cmdManual(argv: string[]): Promise<number> {
   const n = Math.max(1, Math.min(12, Number(flag(argv, "--turns") ?? "6") || 6));
   const events = readEvents(dir, sid);
   const order = promptOrder(events);
-  const verdicts = events.filter((e): e is Extract<HookEvent, { t: "verdict" }> => e.t === "verdict");
+  const verdicts = events.filter((e): e is Verdict => e.t === "verdict");
   if (verdicts.length === 0) {
     console.log(
       isDisabled(dir, env0())
@@ -156,24 +163,22 @@ async function cmdManual(argv: string[]): Promise<number> {
     if (forAgent) console.log(NO_REFLECTION_FOR_AGENT);
     return 0;
   }
-  const turns: EvidenceTurn[] = verdicts.slice(-n).map((v) => ({
-    turn: order.indexOf(v.promptId) + 1,
-    label: v.label,
-    confidence: v.confidence,
-    priorSummary: v.priorSummary,
-    prompt: v.prompt,
-    evidence: v.evidence,
-  }));
+  const recent = verdicts.slice(-n);
   const env = withProjectEnv(dir, process.env);
-  if (pluginMode(env) && !resolveApiKey(env)) {
-    // Claude Code passes the plugin's key to its hooks but not to its commands,
-    // so the plugin's /brain-reflect makes no API call. It hands the agent what
+  if (pluginMode(env)) {
+    // The plugin's /brain-reflect makes no API call. It hands the agent what
     // the hooks recorded, and the agent writes the reflection itself.
-    printRecorded(events, turns, forAgent);
+    printRecorded(dir, sid, events, recent, forAgent);
+    return 0;
+  }
+  const turns = evidenceTurns(dir, sid, recent, order);
+  if (turns.length === 0) {
+    console.log("reflect: the text of those messages is no longer kept (only the last 12 are), so there is nothing to send.");
+    if (forAgent) console.log(NO_REFLECTION_FOR_AGENT);
     return 0;
   }
   const cfg = loadConfig(env);
-  const last = verdicts[verdicts.length - 1] as Extract<HookEvent, { t: "verdict" }>;
+  const last = verdicts[verdicts.length - 1] as Verdict;
   const res = await reflectAndRecord(turns, cfg, dir, sid, last.promptId, defaultDeps(env), true);
   if (!res) {
     const err = [...readEvents(dir, sid)].reverse().find((e) => e.t === "error");
@@ -236,6 +241,8 @@ export function hookSettings(bundle: string): unknown {
       SessionStart: [{ hooks: [hook("session-start", { timeout: 10 })] }],
       UserPromptSubmit: [{ hooks: [hook("prompt", { timeout: 10 }), hook("judge", { async: true })] }],
       PostToolUse: [{ hooks: [hook("tool", { timeout: 10 })] }],
+      PostToolUseFailure: [{ hooks: [hook("tool-failed", { timeout: 10 })] }],
+      Stop: [{ hooks: [hook("stop", { timeout: 10 })] }],
     },
   };
 }

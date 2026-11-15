@@ -4,16 +4,19 @@
 // stays silent on a session opener, fires on the second pushback inside the
 // window and not the first, delivers its guidance exactly once, survives a
 // compaction, stops at its spend cap, and never writes outside .reflect/.
+// The agent's turn reaches the judge only through the hooks Claude Code runs
+// (PostToolUse, PostToolUseFailure, Stop); reflect never reads the transcript.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 
-import { reflectForFire, runHook, withProjectEnv, type HookDeps, type HookInput } from "./run.js";
+import { loadConfig, reflectForFire, runHook, withProjectEnv, type HookDeps, type HookInput } from "./run.js";
 import { appendEvent, pruneSessions, readEvents, sessionDir } from "./state.js";
+import { pruneAgentTurns, turnTextFor } from "./turns.js";
 import { capCostUSD, costUSD } from "../pricing.js";
 import type { JudgeOptions, JudgeResult } from "../detect/judge.js";
 import type { Label, Pair } from "../detect/types.js";
@@ -25,6 +28,7 @@ import { pairForPrompt } from "../transcript/parse.js";
 let seq = 0;
 const at = () => new Date(Date.UTC(2026, 10, 16, 0, 0, seq++)).toISOString();
 
+// Transcript lines, for the parser tests at the end (the benchmark still reads transcripts).
 function assistantLine(text: string, edits: string[] = []) {
   const content: unknown[] = [{ type: "text", text }];
   for (const f of edits) content.push({ type: "tool_use", id: `t${seq++}`, name: "Edit", input: { file_path: f } });
@@ -36,7 +40,6 @@ function userLine(text: string) {
 
 interface World {
   dir: string;
-  transcript: string;
   judged: Pair[];
   reflections: number;
   deps: HookDeps;
@@ -58,25 +61,9 @@ const REFLECTION: Reflection2 = {
 
 function world(env: NodeJS.ProcessEnv = {}): World {
   const dir = mkdtempSync(join(tmpdir(), "reflect-hook-"));
-  const transcript = join(dir, "S.jsonl");
-  writeFileSync(transcript, "");
-  const w: World = {
-    dir,
-    transcript,
-    judged: [],
-    reflections: 0,
-    labels: new Map(),
-    deps: {} as HookDeps,
-  };
+  const w: World = { dir, judged: [], reflections: 0, labels: new Map(), deps: {} as HookDeps };
   w.deps = {
     env,
-    readTranscript: (p) => {
-      try {
-        return readFileSync(p, "utf8");
-      } catch {
-        return null;
-      }
-    },
     judge: async (pair: Pair, _o: JudgeOptions): Promise<JudgeResult> => {
       w.judged.push(pair);
       const label = w.labels.get(pair.prompt) ?? "instruction";
@@ -104,16 +91,27 @@ const input = (w: World, promptId: string, prompt: string): HookInput => ({
   session_id: "S",
   prompt_id: promptId,
   prompt,
-  transcript_path: w.transcript,
   cwd: w.dir,
 });
 
-/** One developer turn: both UserPromptSubmit hooks, then the turn lands in the transcript. */
+/** The agent's turn after prompt `id`, as Claude Code reports it: one PostToolUse per edit, then Stop. */
+async function agent(w: World, id: string, reply: string, edits: string[]): Promise<Array<string | null>> {
+  const outs: Array<string | null> = [];
+  for (const f of edits) {
+    outs.push(
+      await runHook("tool", { session_id: "S", prompt_id: id, cwd: w.dir, tool_name: "Edit", tool_input: { file_path: f } }, w.dir, w.deps),
+    );
+  }
+  await runHook("stop", { session_id: "S", prompt_id: id, cwd: w.dir, last_assistant_message: reply }, w.dir, w.deps);
+  return outs;
+}
+
+/** One developer turn: both UserPromptSubmit hooks, then the agent's turn. */
 async function turn(w: World, id: string, prompt: string, label: Label, agentReply: string, edits: string[]) {
   w.labels.set(prompt, label);
   const sync = await runHook("prompt", input(w, id, prompt), w.dir, w.deps);
   await runHook("judge", input(w, id, prompt), w.dir, w.deps);
-  appendFileSync(w.transcript, userLine(prompt) + "\n" + assistantLine(agentReply, edits) + "\n");
+  await agent(w, id, agentReply, edits);
   return sync;
 }
 
@@ -122,6 +120,8 @@ function ctx(out: string | null): string {
   const j = JSON.parse(out) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
   return j.hookSpecificOutput.additionalContext;
 }
+
+const agentFile = (w: World, id: string) => join(sessionDir(w.dir, "S"), "agent", `${id}.jsonl`);
 
 // ─── tests ────────────────────────────────────────────────────────────
 
@@ -137,19 +137,105 @@ test("a session opener is never judged: there is nothing to push back on", async
   }
 });
 
-test("the judge sees what the agent just did, not just the words", async () => {
+test("the judge sees what the agent just did, from the hooks, and the record is then deleted", async () => {
   const w = world();
   try {
     await turn(w, "p1", "Add a --verbose flag to the CLI", "instruction", "Added the flag and refactored logging.", [
       "src/cli.ts",
       "src/log.ts",
     ]);
+    assert.ok(existsSync(agentFile(w, "p1")));
     await turn(w, "p2", "Only touch src/cli.ts, revert the logging change", "correction", "Reverted.", ["src/log.ts"]);
     const p = w.judged[0] as Pair;
     assert.equal(p.prompt, "Only touch src/cli.ts, revert the logging change");
+    assert.equal(p.promptIndex, 1);
     assert.ok(p.prior, "prior turn present");
     assert.deepEqual(p.prior.toolCalls.map((c) => c.target), ["src/cli.ts", "src/log.ts"]);
     assert.ok(p.prior.toolCalls.every((c) => c.mutating));
+    assert.equal(p.prior.text, "Added the flag and refactored logging.");
+    assert.equal(existsSync(agentFile(w, "p1")), false, "the judged turn's record is gone");
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("a transcript path in the hook input is never read", async () => {
+  const w = world();
+  try {
+    const transcript = join(w.dir, "S.jsonl");
+    writeFileSync(transcript, [userLine("x"), assistantLine("From the transcript.", ["src/elsewhere.ts"])].join("\n"));
+    const withPath = (id: string, prompt: string) => ({ ...input(w, id, prompt), transcript_path: transcript }) as HookInput;
+    await runHook("prompt", withPath("p1", "Fix the parser"), w.dir, w.deps);
+    await runHook("judge", withPath("p1", "Fix the parser"), w.dir, w.deps);
+    await agent(w, "p1", "Fixed.", ["src/p.ts"]);
+    await runHook("prompt", withPath("p2", "no, only p.ts"), w.dir, w.deps);
+    await runHook("judge", withPath("p2", "no, only p.ts"), w.dir, w.deps);
+    assert.deepEqual(w.judged[0]?.prior?.toolCalls.map((c) => c.target), ["src/p.ts"]);
+    assert.equal(w.judged[0]?.prior?.text, "Fixed.");
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("a failed tool call counts as an error, and a subagent's calls are not the agent's turn", async () => {
+  const w = world();
+  try {
+    await turn(w, "p1", "Run the tests", "instruction", "", []);
+    await runHook("tool-failed", { session_id: "S", prompt_id: "p1", cwd: w.dir, tool_name: "Bash", tool_input: { command: "npm test" } }, w.dir, w.deps);
+    await runHook("tool", { session_id: "S", prompt_id: "p1", cwd: w.dir, agent_id: "sub1", tool_name: "Read", tool_input: { file_path: "src/sub.ts" } }, w.dir, w.deps);
+    await runHook("stop", { session_id: "S", prompt_id: "p1", cwd: w.dir, last_assistant_message: "The tests fail." }, w.dir, w.deps);
+    await turn(w, "p2", "they fail because you broke them", "failure_report", "Ok.", []);
+    const calls = w.judged[0]?.prior?.toolCalls ?? [];
+    assert.deepEqual(calls.map((c) => [c.name, c.target, c.errored]), [["Bash", "npm test", true]]);
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("a bare /compact keeps the agent's turn open for the next real message", async () => {
+  const w = world();
+  try {
+    await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed.", ["src/a.ts"]);
+    await runHook("prompt", input(w, "c1", "/compact"), w.dir, w.deps);
+    await runHook("judge", input(w, "c1", "/compact"), w.dir, w.deps);
+    await agent(w, "c1", "Compacted.", ["src/b.ts"]);
+    await turn(w, "p2", "you also changed src/b.ts, undo that", "correction", "Undone.", []);
+    assert.equal(w.judged.length, 1);
+    const p = w.judged[0] as Pair;
+    assert.deepEqual(p.prior?.toolCalls.map((c) => c.target), ["src/a.ts", "src/b.ts"]);
+    assert.equal(p.promptIndex, 1);
+    assert.ok(readEvents(w.dir, "S").some((e) => e.t === "skip" && e.reason === "bookkeeping"));
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("only the developer's last 12 messages keep their text, and the log keeps none", async () => {
+  const w = world();
+  try {
+    for (let i = 1; i <= 14; i++) await turn(w, `p${i}`, `step ${i} of the plan`, "instruction", `Done ${i}.`, [`src/s${i}.ts`]);
+    const events = readEvents(w.dir, "S");
+    const verdicts = events.filter((e): e is Extract<typeof e, { t: "verdict" }> => e.t === "verdict");
+    assert.equal(verdicts.length, 13);
+    assert.ok(verdicts.every((v) => v.prompt === undefined && v.priorSummary === undefined && v.evidence === undefined));
+    assert.equal(readdirSync(join(sessionDir(w.dir, "S"), "turns")).length, 12);
+    assert.equal(turnTextFor(w.dir, "S", verdicts[0] as (typeof verdicts)[number]), null, "p2's text is dropped");
+    assert.match(turnTextFor(w.dir, "S", verdicts[12] as (typeof verdicts)[number])?.prompt ?? "", /step 14/);
+    assert.deepEqual(readdirSync(join(sessionDir(w.dir, "S"), "agent")), ["p14.jsonl"], "only the unjudged last turn");
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("an agent turn nobody judged is deleted after a day", async () => {
+  const w = world();
+  try {
+    await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed.", ["src/a.ts"]);
+    assert.equal(pruneAgentTurns(w.dir), 0);
+    const old = new Date(Date.now() - 25 * 3_600_000);
+    utimesSync(agentFile(w, "p1"), old, old);
+    assert.equal(pruneAgentTurns(w.dir), 1);
+    assert.equal(existsSync(agentFile(w, "p1")), false);
   } finally {
     rmSync(w.dir, { recursive: true, force: true });
   }
@@ -173,12 +259,12 @@ test("one pushback does not fire; the second inside the window does, once", asyn
   }
 });
 
-test("guidance is delivered exactly once, mid-turn, as additionalContext", async () => {
+test("guidance is delivered exactly once, mid-turn, and the developer sees the same note", async () => {
   const w = world();
   try {
     await turn(w, "p1", "Fix the date parsing bug in src/a.ts", "instruction", "Fixed, and tidied src/b.ts.", ["src/a.ts", "src/b.ts"]);
     await turn(w, "p2", "Leave src/b.ts alone", "correction", "Reverted, renamed c.", ["src/c.ts"]);
-    await turn(w, "p3", "Only src/a.ts, undo the rename", "correction", "Undone.", ["src/c.ts"]);
+    await turn(w, "p3", "Only src/a.ts, undo the rename", "correction", "Undone.", []);
 
     const first = await runHook("tool", { session_id: "S", tool_name: "Edit", cwd: w.dir }, w.dir, w.deps);
     const text = ctx(first);
@@ -186,11 +272,10 @@ test("guidance is delivered exactly once, mid-turn, as additionalContext", async
     assert.match(text, /Edit only the file the developer names/);
     assert.match(text, /It may be wrong if:/);
     assert.equal(JSON.parse(first as string).hookSpecificOutput.hookEventName, "PostToolUse");
-    // The developer sees every note the agent gets.
+    // The developer sees every note the agent gets, word for word.
     const notice = (JSON.parse(first as string) as { systemMessage: string }).systemMessage;
-    assert.match(notice, /^reflect: sent the agent a note\./);
-    assert.match(notice, /Pattern: .+/);
-    assert.match(notice, /Adjustment: Edit only the file the developer names/);
+    assert.match(notice, /^reflect sent the agent this note:\n\n/);
+    assert.ok(notice.endsWith(text));
 
     assert.equal(await runHook("tool", { session_id: "S", cwd: w.dir }, w.dir, w.deps), null);
     assert.equal(await runHook("prompt", input(w, "p4", "ok continue"), w.dir, w.deps), null);
@@ -204,12 +289,13 @@ test("guidance in force survives a compaction, and lapses after its expiry", asy
   try {
     await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed, and tidied b.", ["src/a.ts", "src/b.ts"]);
     await turn(w, "p2", "Leave src/b.ts alone", "correction", "Reverted.", ["src/b.ts"]);
-    await turn(w, "p3", "Only src/a.ts!", "correction", "Ok.", ["src/a.ts"]);
+    await turn(w, "p3", "Only src/a.ts!", "correction", "Ok.", []);
     ctx(await runHook("tool", { session_id: "S", cwd: w.dir }, w.dir, w.deps));
 
     const compact = { session_id: "S", source: "compact", cwd: w.dir };
-    const again = ctx(await runHook("session-start", compact, w.dir, w.deps));
-    assert.match(again, /Adjustment for the next 3 turns/);
+    const out = await runHook("session-start", compact, w.dir, w.deps);
+    assert.match(ctx(out), /Adjustment for the next 3 turns/);
+    assert.match((JSON.parse(out as string) as { systemMessage: string }).systemMessage, /again/);
 
     for (const id of ["p4", "p5", "p6"]) await turn(w, id, `next step ${id} please`, "instruction", "Done.", ["src/a.ts"]);
     assert.equal(await runHook("session-start", compact, w.dir, w.deps), null, "expired after 3 turns");
@@ -224,7 +310,7 @@ test("verdicts that land out of order still complete the pattern", async () => {
     await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed, and tidied b.", ["src/a.ts", "src/b.ts"]);
     // p2's judge is slow: p3 is recorded and judged first.
     await runHook("prompt", input(w, "p2", "Leave src/b.ts alone"), w.dir, w.deps);
-    appendFileSync(w.transcript, userLine("Leave src/b.ts alone") + "\n" + assistantLine("Ok.", ["src/b.ts"]) + "\n");
+    await agent(w, "p2", "Ok.", ["src/b.ts"]);
     await runHook("prompt", input(w, "p3", "Only src/a.ts!"), w.dir, w.deps);
     w.labels.set("Only src/a.ts!", "correction");
     w.labels.set("Leave src/b.ts alone", "correction");
@@ -232,6 +318,7 @@ test("verdicts that land out of order still complete the pattern", async () => {
     assert.equal(w.reflections, 0);
     await runHook("judge", input(w, "p2", "Leave src/b.ts alone"), w.dir, w.deps);
     assert.equal(w.reflections, 1);
+    assert.deepEqual(w.judged.map((p) => p.prior?.toolCalls.map((c) => c.target)), [["src/b.ts"], ["src/a.ts", "src/b.ts"]]);
   } finally {
     rmSync(w.dir, { recursive: true, force: true });
   }
@@ -247,6 +334,7 @@ test("the spend cap stops judging, and says so once", async () => {
     assert.equal(w.judged.length, 1, "the first judged turn spends past the cap");
     const budget = readEvents(w.dir, "S").filter((e) => e.t === "skip" && e.reason === "budget");
     assert.equal(budget.length, 1);
+    assert.equal(existsSync(agentFile(w, "p2")), false, "a turn skipped for budget is not kept either");
   } finally {
     rmSync(w.dir, { recursive: true, force: true });
   }
@@ -288,6 +376,7 @@ test("state stays inside .reflect/, which ignores itself in git", async () => {
     await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed.", ["src/a.ts"]);
     assert.ok(existsSync(sessionDir(w.dir, "S")));
     assert.match(readFileSync(join(w.dir, ".reflect", ".gitignore"), "utf8"), /^\*$/m);
+    assert.deepEqual(readdirSync(w.dir), [".reflect"]);
   } finally {
     rmSync(w.dir, { recursive: true, force: true });
   }
@@ -300,6 +389,17 @@ test("a hostile session id cannot escape the state directory", async () => {
     const dir = sessionDir(w.dir, "../../etc");
     assert.ok(dir.startsWith(join(w.dir, ".reflect", "sessions")));
     assert.ok(existsSync(join(dir, "events.jsonl")));
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("a hostile prompt id cannot escape the session directory", async () => {
+  const w = world();
+  try {
+    await runHook("stop", { session_id: "S", prompt_id: "../../../x", cwd: w.dir, last_assistant_message: "hi" }, w.dir, w.deps);
+    assert.deepEqual(readdirSync(w.dir), [".reflect"]);
+    assert.equal(readdirSync(join(sessionDir(w.dir, "S"), "agent")).length, 1);
   } finally {
     rmSync(w.dir, { recursive: true, force: true });
   }
@@ -322,16 +422,28 @@ test("the project .env contributes only reflect's own keys and never overrides",
   }
 });
 
-test("as a plugin, the project .env gives reflect settings but never a key", () => {
+test("as a plugin, the project .env is not read at all", () => {
   const dir = mkdtempSync(join(tmpdir(), "reflect-env-plugin-"));
   try {
     writeFileSync(join(dir, ".env"), 'ANTHROPIC_API_KEY="sk-from-file"\nREFLECT_POLICY=k3w8\n');
     const env = withProjectEnv(dir, { CLAUDE_PLUGIN_ROOT: "/plugins/reflect" });
     assert.equal(env["ANTHROPIC_API_KEY"], undefined);
-    assert.equal(env["REFLECT_POLICY"], "k3w8");
+    assert.equal(env["REFLECT_POLICY"], undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("as a plugin, the plugin's settings win over the environment", () => {
+  const env = {
+    REFLECT_MODEL: "model-from-env",
+    CLAUDE_PLUGIN_OPTION_REFLECTION_MODEL: "model-from-setting",
+    REFLECT_MAX_USD_PER_SESSION: "9",
+    CLAUDE_PLUGIN_OPTION_MAX_USD_PER_SESSION: "0.25",
+  };
+  assert.equal(loadConfig({ ...env, CLAUDE_PLUGIN_ROOT: "/p" }).reflectionModel, "model-from-setting");
+  assert.equal(loadConfig({ ...env, CLAUDE_PLUGIN_ROOT: "/p" }).maxUsdPerSession, 0.25);
+  assert.equal(loadConfig(env).reflectionModel, "model-from-env");
 });
 
 test("the key from the project .env or the plugin setting is the one the model calls use", async () => {
@@ -353,6 +465,18 @@ test("the key from the project .env or the plugin setting is the one the model c
   }
 });
 
+test("IDE context blocks are not read as the developer's words", async () => {
+  const w = world();
+  try {
+    await turn(w, "p1", "Fix the parser in src/p.ts", "instruction", "Done.", ["src/p.ts"]);
+    await turn(w, "p2", "<ide_opened_file>The user opened src/q.ts in the IDE.</ide_opened_file> leave q alone", "correction", "Ok.", []);
+    assert.equal(w.judged[0]?.prompt.trim(), "leave q alone");
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+// The benchmark still pairs prompts from transcripts.
 test("pairForPrompt handles a transcript that already holds the prompt", () => {
   const raw = [
     userLine("Fix the parser in src/p.ts"),
@@ -372,7 +496,7 @@ async function firedWorld(env: NodeJS.ProcessEnv = {}): Promise<World> {
   const w = world(env);
   await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed, and tidied b.", ["src/a.ts", "src/b.ts"]);
   await turn(w, "p2", "Leave src/b.ts alone", "correction", "Reverted.", ["src/b.ts"]);
-  await turn(w, "p3", "Only src/a.ts!", "correction", "Ok.", ["src/a.ts"]);
+  await turn(w, "p3", "Only src/a.ts!", "correction", "Ok.", []);
   return w;
 }
 
@@ -383,9 +507,9 @@ test("a late verdict cannot fire a second time on turns that already fired", asy
     await turn(w, "p2", "Leave src/b.ts alone", "correction", "Reverted.", ["src/b.ts"]);
     // p3's judge is slow; p4 is recorded and judged first, and fires on [p2, p4].
     await runHook("prompt", input(w, "p3", "Not like that"), w.dir, w.deps);
-    appendFileSync(w.transcript, userLine("Not like that") + "\n" + assistantLine("Ok.", ["src/a.ts"]) + "\n");
+    await agent(w, "p3", "Ok.", ["src/a.ts"]);
     await runHook("prompt", input(w, "p4", "No, only src/a.ts"), w.dir, w.deps);
-    appendFileSync(w.transcript, userLine("No, only src/a.ts") + "\n" + assistantLine("Ok.", ["src/a.ts"]) + "\n");
+    await agent(w, "p4", "Ok.", ["src/a.ts"]);
     w.labels.set("Not like that", "correction");
     w.labels.set("No, only src/a.ts", "correction");
     await runHook("judge", input(w, "p4", "No, only src/a.ts"), w.dir, w.deps);
@@ -469,16 +593,6 @@ test(".env values: quotes, trailing spaces and comments", () => {
   }
 });
 
-test("IDE context blocks are not read as the developer's words", () => {
-  const raw = [
-    userLine("Fix the parser in src/p.ts"),
-    assistantLine("Done.", ["src/p.ts"]),
-    userLine("<ide_opened_file>The user opened src/q.ts in the IDE.</ide_opened_file> leave q alone"),
-  ].join("\n");
-  const pair = pairForPrompt(raw, "<ide_opened_file>The user opened src/q.ts in the IDE.</ide_opened_file> leave q alone", { sessionId: "S" });
-  assert.equal(pair.prompt.trim(), "leave q alone");
-});
-
 test("a fire hands the reflection to a worker, which writes the note once", async () => {
   const w = world();
   const started: string[] = [];
@@ -498,6 +612,26 @@ test("a fire hands the reflection to a worker, which writes the note once", asyn
     const g = readEvents(w.dir, "S").filter((e) => e.t === "guidance");
     assert.equal(g.length, 1);
     ctx(await runHook("tool", { session_id: "S", cwd: w.dir }, w.dir, w.deps));
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("the reflection reads the stored text of the turns that fired", async () => {
+  const w = world();
+  let seen: Array<{ prompt: string; priorSummary: string }> = [];
+  w.deps.reflect = async (turns) => {
+    seen = turns.map((t) => ({ prompt: t.prompt, priorSummary: t.priorSummary }));
+    w.reflections++;
+    return { reflection: REFLECTION, model: "claude-opus-5-5", costUSD: 0.03, latencyMs: 5000, cacheReadTokens: 0 };
+  };
+  try {
+    await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed, and tidied b.", ["src/a.ts", "src/b.ts"]);
+    await turn(w, "p2", "Leave src/b.ts alone", "correction", "Reverted.", ["src/b.ts"]);
+    await turn(w, "p3", "Only src/a.ts!", "correction", "Ok.", []);
+    assert.deepEqual(seen.map((t) => t.prompt), ["Leave src/b.ts alone", "Only src/a.ts!"]);
+    assert.match(seen[0]?.priorSummary ?? "", /Edit: src\/b\.ts \[modified\]/);
+    assert.match(seen[0]?.priorSummary ?? "", /Fixed, and tidied b\./);
   } finally {
     rmSync(w.dir, { recursive: true, force: true });
   }

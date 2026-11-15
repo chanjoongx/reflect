@@ -12,14 +12,20 @@
 //                                              reflection in a detached worker
 //                                              (reflect-worker), which outlives
 //                                              the hook process.
-//   tool           PostToolUse         sync   deliver pending guidance mid-turn,
-//                                              before the agent's next edit
+//   tool           PostToolUse         sync   record the call; deliver pending
+//                                              guidance mid-turn, before the
+//                                              agent's next edit
+//   tool-failed    PostToolUseFailure  sync   record the call as failed
+//   stop           Stop                sync   record the agent's final reply
+//
+// What the recording keeps, and for how long, is in ./turns.ts. reflect never
+// reads the session transcript.
 //
 // Contract inherited from v0.1 and kept: a hook never blocks, never fails the
 // prompt, and exits 0. Every error becomes an `error` event in the session log.
 
 import { spawn } from "node:child_process";
-import { existsSync, openSync, readSync, closeSync, fstatSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, openSync, closeSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { structuralGate } from "../detect/structural.js";
 import { renderPriorTurn } from "../detect/render.js";
@@ -27,7 +33,8 @@ import { DEFAULT_JUDGE_MODEL, DEFAULT_REFLECTION_MODEL } from "../models.js";
 import type { JudgeOptions, JudgeResult, JudgeThinking } from "../detect/judge.js";
 import { isPushback } from "../detect/types.js";
 import type { Pair } from "../detect/types.js";
-import { pairForPrompt, shortHash } from "../transcript/parse.js";
+import { MIN_PROMPT_CHARS, isBookkeeping, shortHash, stripWrappers } from "../transcript/parse.js";
+import { pruneAgentTurns, recordCall, recordSaid, saveTurnText, takeAgentTurn, turnTextFor } from "./turns.js";
 import { Accumulator, policyById, type TriggerPolicy } from "../trigger/accumulator.js";
 import type { EvidenceTurn, ReflectionOptions, ReflectionResult } from "../reflect/reflection.js";
 import { formatForAgent, formatMarkdown } from "../reflect/format.js";
@@ -46,8 +53,8 @@ import {
   type HookEvent,
 } from "./state.js";
 
-export type HookMode = "session-start" | "prompt" | "judge" | "tool";
-export const HOOK_MODES: readonly HookMode[] = ["session-start", "prompt", "judge", "tool"];
+export type HookMode = "session-start" | "prompt" | "judge" | "tool" | "tool-failed" | "stop";
+export const HOOK_MODES: readonly HookMode[] = ["session-start", "prompt", "judge", "tool", "tool-failed", "stop"];
 /** Internal: `node reflect-hook.mjs reflect-worker <projectDir> <sessionId> <firePromptId>`. */
 export const WORKER_MODE = "reflect-worker";
 
@@ -56,17 +63,21 @@ const EVENT_NAME: Record<HookMode, string> = {
   prompt: "UserPromptSubmit",
   judge: "UserPromptSubmit",
   tool: "PostToolUse",
+  "tool-failed": "PostToolUseFailure",
+  stop: "Stop",
 };
 
 export interface HookInput {
   session_id?: string;
   prompt_id?: string;
-  transcript_path?: string;
   cwd?: string;
   hook_event_name?: string;
   prompt?: string;
   source?: string;
   tool_name?: string;
+  tool_input?: Record<string, unknown>;
+  /** Stop: the text of the agent's final message in the turn. */
+  last_assistant_message?: string;
   /** Set when the hook fires inside a subagent. */
   agent_id?: string;
 }
@@ -75,7 +86,6 @@ export interface HookDeps {
   env: NodeJS.ProcessEnv;
   judge: (pair: Pair, opts: JudgeOptions) => Promise<JudgeResult>;
   reflect: (turns: EvidenceTurn[], window: number, opts: ReflectionOptions) => Promise<ReflectionResult>;
-  readTranscript: (path: string) => string | null;
   /** Tests inject a client; otherwise each call builds one from the key in `env`. */
   makeClient?: () => import("../api/client.js").MessagesClient;
   /**
@@ -93,7 +103,6 @@ export const defaultDeps = (env: NodeJS.ProcessEnv = process.env): HookDeps => (
   env,
   judge: async (pair, opts) => (await import("../detect/judge.js")).judgePair(pair, opts),
   reflect: async (turns, window, opts) => (await import("../reflect/reflection.js")).callReflection(turns, window, opts),
-  readTranscript: readTail,
   detach: spawnWorker,
 });
 
@@ -140,8 +149,9 @@ export interface HookConfig {
 const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 /**
- * The key from the hook's own environment (which includes the project .env and
- * the plugin setting), so the SDK client never falls back to a different one.
+ * The key from the hook's own environment (the plugin setting, or outside the
+ * plugin the environment merged with the project .env), so the SDK client never
+ * falls back to a different one.
  */
 function apiKeyOpt(env: NodeJS.ProcessEnv): { apiKey?: string } {
   const key = resolveApiKey(env);
@@ -150,12 +160,15 @@ function apiKeyOpt(env: NodeJS.ProcessEnv): { apiKey?: string } {
 
 export function loadConfig(env: NodeJS.ProcessEnv): HookConfig {
   const effort = env["REFLECT_EFFORT"] || "high";
-  const cap = Number(env["REFLECT_MAX_USD_PER_SESSION"] || env["CLAUDE_PLUGIN_OPTION_MAX_USD_PER_SESSION"] || "0.5");
+  // As a plugin, a value set in the plugin's settings wins over the environment.
+  const plugin = pluginMode(env);
+  const pick = (setting: string, envVar: string) =>
+    plugin ? env[setting] || env[envVar] : env[envVar] || env[setting];
+  const cap = Number(pick("CLAUDE_PLUGIN_OPTION_MAX_USD_PER_SESSION", "REFLECT_MAX_USD_PER_SESSION") || "0.5");
   return {
     judgeModel: env["REFLECT_JUDGE_MODEL"] || DEFAULT_JUDGE_MODEL,
     judgeThinking: env["REFLECT_JUDGE_THINKING"] === "adaptive" ? "adaptive" : "off",
-    reflectionModel:
-      env["REFLECT_MODEL"] || env["CLAUDE_PLUGIN_OPTION_REFLECTION_MODEL"] || DEFAULT_REFLECTION_MODEL,
+    reflectionModel: pick("CLAUDE_PLUGIN_OPTION_REFLECTION_MODEL", "REFLECT_MODEL") || DEFAULT_REFLECTION_MODEL,
     reflectionEffort: (EFFORTS.has(effort) ? effort : "high") as HookConfig["reflectionEffort"],
     policy: policyById(env["REFLECT_POLICY"]),
     maxUsdPerSession: Number.isFinite(cap) && cap >= 0 ? cap : 0.5,
@@ -163,9 +176,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): HookConfig {
 }
 
 const ENV_KEYS = /^(ANTHROPIC_API_KEY|REFLECT_[A-Z_]+)$/;
-// As an installed plugin, reflect takes its key only from the plugin setting,
-// so a project's .env contributes REFLECT_* settings and nothing else.
-const ENV_KEYS_PLUGIN = /^REFLECT_[A-Z_]+$/;
 
 /** `"quoted"` or `'quoted'` as written; otherwise trimmed, with a trailing ` # comment` dropped. */
 function dotenvValue(raw: string): string {
@@ -177,21 +187,23 @@ function dotenvValue(raw: string): string {
 
 /**
  * v0.1 told users to put ANTHROPIC_API_KEY in the project's .env. Keep that
- * working, but read only reflect's own keys from it, and never override what
- * the environment already says.
+ * working for hooks wired by hand and the CLI, but read only reflect's own
+ * keys from it, and never override what the environment already says. An
+ * installed plugin does not read the file at all: its key and settings come
+ * from the plugin's settings.
  */
 export function withProjectEnv(projectDir: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = { ...env };
+  if (pluginMode(env)) return out;
   let raw: string;
   try {
     raw = readFileSync(join(projectDir, ".env"), "utf8");
   } catch {
     return out;
   }
-  const allowed = pluginMode(env) ? ENV_KEYS_PLUGIN : ENV_KEYS;
   for (const line of raw.split(/\r?\n/)) {
     const m = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=(.*)$/.exec(line);
-    if (!m || !m[1] || !allowed.test(m[1])) continue;
+    if (!m || !m[1] || !ENV_KEYS.test(m[1])) continue;
     if (out[m[1]] !== undefined && out[m[1]] !== "") continue;
     out[m[1]] = dotenvValue(m[2] ?? "");
   }
@@ -200,25 +212,10 @@ export function withProjectEnv(projectDir: string, env: NodeJS.ProcessEnv): Node
 
 // ─── Small helpers ────────────────────────────────────────────────────
 
-const TAIL_BYTES = 8 * 1024 * 1024;
-
-/** Last 8 MB of a transcript, starting at a line boundary. Null when unreadable. */
-export function readTail(path: string): string | null {
-  let fd: number | null = null;
-  try {
-    fd = openSync(path, "r");
-    const size = fstatSync(fd).size;
-    const start = Math.max(0, size - TAIL_BYTES);
-    const buf = Buffer.alloc(size - start);
-    readSync(fd, buf, 0, buf.length, start);
-    let s = buf.toString("utf8");
-    if (start > 0) s = s.slice(s.indexOf("\n") + 1);
-    return s;
-  } catch {
-    return null;
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
+/** A command such as `/compact`, or a message too short to be one: the agent's turn stays open past it. */
+function isHarnessPrompt(prompt: string): boolean {
+  const clean = stripWrappers(prompt);
+  return clean.length < MIN_PROMPT_CHARS || isBookkeeping(clean);
 }
 
 export function promptIdOf(input: HookInput): string {
@@ -229,23 +226,16 @@ export function promptIdOf(input: HookInput): string {
   return `h${shortHash(input.prompt ?? "")}`;
 }
 
-// Every note the agent receives is also shown to the developer, so nothing
-// reaches the agent's context that the developer cannot see.
-function output(mode: HookMode, context: string, notice: string): string {
+// Every note the agent receives is also shown to the developer, word for word,
+// so nothing reaches the agent's context that the developer cannot see.
+function output(mode: HookMode, context: string, again = false): string {
+  const head = again
+    ? "reflect sent the agent its current note again, because the conversation was compacted or resumed:"
+    : "reflect sent the agent this note:";
   return JSON.stringify({
-    systemMessage: notice,
+    systemMessage: `${head}\n\n${context}`,
     hookSpecificOutput: { hookEventName: EVENT_NAME[mode], additionalContext: context },
   });
-}
-
-export function noticeFor(g: GuidanceEvent, again = false): string {
-  const r = g.reflection;
-  return [
-    again ? "reflect: sent the agent its current note again after compaction." : "reflect: sent the agent a note.",
-    `Pattern: ${r.pattern}`,
-    `Adjustment: ${r.adjustment}`,
-    "The full note is in .reflect/session-guidance.md.",
-  ].join("\n");
 }
 
 type GuidanceEvent = Extract<HookEvent, { t: "guidance" }>;
@@ -325,7 +315,10 @@ export async function runHook(
   try {
     switch (mode) {
       case "session-start": {
-        if (input.source === "startup") pruneSessions(projectDir);
+        if (input.source === "startup") {
+          pruneSessions(projectDir);
+          pruneAgentTurns(projectDir);
+        }
         if (input.source !== "compact" && input.source !== "resume") return null;
         // Compaction rewrites the context the guidance was delivered into.
         // Re-deliver what is still in force so a long session keeps it.
@@ -333,7 +326,7 @@ export async function runHook(
         const g = activeGuidance(events) ?? pendingGuidance(events);
         if (!g) return null;
         appendEvent(projectDir, sessionId, { t: "delivered", at: now(), id: g.id, via: "session-start" });
-        return output(mode, contextFor(g, events), noticeFor(g, true));
+        return output(mode, contextFor(g, events), true);
       }
 
       case "prompt": {
@@ -343,15 +336,27 @@ export async function runHook(
           at: now(),
           promptId,
           chars: (input.prompt ?? "").length,
+          ...(isHarnessPrompt(input.prompt ?? "") ? { bookkeeping: true as const } : {}),
         });
         return deliver(mode, projectDir, sessionId);
       }
 
       case "tool":
+      case "tool-failed":
         // A subagent's tool call: its context is thrown away when it returns,
-        // so a note delivered there would never reach the main agent.
+        // so a note delivered there would never reach the main agent, and the
+        // developer's next message answers the main agent, not the subagent.
         if (input.agent_id) return null;
-        return deliver(mode, projectDir, sessionId);
+        if (input.prompt_id && input.tool_name) {
+          recordCall(projectDir, sessionId, input.prompt_id, input.tool_name, input.tool_input ?? {}, mode === "tool-failed");
+        }
+        return mode === "tool" ? deliver(mode, projectDir, sessionId) : null;
+
+      case "stop":
+        if (input.prompt_id && typeof input.last_assistant_message === "string") {
+          recordSaid(projectDir, sessionId, input.prompt_id, input.last_assistant_message, now());
+        }
+        return null;
 
       case "judge":
         await judgeTurn(input, projectDir, sessionId, deps);
@@ -397,7 +402,7 @@ function deliver(mode: HookMode, projectDir: string, sessionId: string): string 
     id: g.id,
     via: mode === "tool" ? "tool" : "prompt",
   });
-  return output(mode, contextFor(g, events), noticeFor(g));
+  return output(mode, contextFor(g, events));
 }
 
 export async function judgeTurn(
@@ -408,10 +413,44 @@ export async function judgeTurn(
 ): Promise<void> {
   const cfg = loadConfig(deps.env);
   const promptId = promptIdOf(input);
-  const prompt = input.prompt ?? "";
   const log = (ev: HookEvent) => appendEvent(projectDir, sessionId, ev);
 
+  // A bare `/compact` is not the developer answering the agent. The agent's
+  // turn stays open, and the next real message is judged against all of it.
+  if (isHarnessPrompt(input.prompt ?? "")) {
+    log({ t: "skip", at: now(), promptId, reason: "bookkeeping" });
+    return;
+  }
+
+  // 1. The pair: what the agent did since the developer last spoke, and this
+  //    message. The agent's turn is read once and deleted, before anything
+  //    below can return, so it is never kept longer than it is needed.
   const before = readEvents(projectDir, sessionId);
+  const order = promptOrder(before, promptId);
+  const idx = order.indexOf(promptId);
+  const harness = new Set(
+    before.filter((e) => e.t === "prompt" && e.bookkeeping).map((e) => (e as { promptId: string }).promptId),
+  );
+  const since: string[] = [];
+  for (let i = idx - 1; i >= 0; i--) {
+    const id = order[i] as string;
+    since.unshift(id);
+    if (!harness.has(id)) break;
+  }
+  const promptIndex = order.slice(0, idx).filter((id) => !harness.has(id)).length;
+  const pair: Pair = {
+    pairId: `${sessionId}:${promptIndex}`,
+    sessionId,
+    project: "",
+    promptIndex,
+    prompt: stripWrappers(input.prompt ?? ""),
+    promptAt: now(),
+    prior: takeAgentTurn(projectDir, sessionId, since),
+    // Only Stage A's score reads this, and the hooks use Stage A as a gate alone.
+    recentTargets: [],
+    sidechain: false,
+  };
+
   if (before.some((e) => e.t === "error" && e.where === "auth")) return;
   if (sessionSpend(before) >= cfg.maxUsdPerSession) {
     if (!before.some((e) => e.t === "skip" && e.reason === "budget")) {
@@ -419,10 +458,6 @@ export async function judgeTurn(
     }
     return;
   }
-
-  // 1. The pair: what the agent did since the developer last spoke, and this prompt.
-  const raw = input.transcript_path ? deps.readTranscript(input.transcript_path) : null;
-  const pair = pairForPrompt(raw ?? "", prompt, { sessionId, promptAt: now() });
 
   // 2. Stage A. Its one hard rule: no prior agent turn, nothing to push back on.
   const gate = structuralGate(pair);
@@ -467,14 +502,22 @@ export async function judgeTurn(
     promptId,
     label: result.verdict.label,
     confidence: result.verdict.confidence,
-    evidence: result.verdict.evidence,
-    rationale: result.verdict.rationale,
-    priorSummary: prior.length > 2000 ? "…" + safeTruncateEnd(prior, 2000) : prior,
-    prompt: safeTruncate(redactString(pair.prompt), 1500),
     model: u.model,
     costUSD: cost,
     latencyMs: u.latencyMs,
   });
+  saveTurnText(
+    projectDir,
+    sessionId,
+    promptId,
+    {
+      prompt: safeTruncate(redactString(pair.prompt), 1500),
+      priorSummary: prior.length > 2000 ? "…" + safeTruncateEnd(prior, 2000) : prior,
+      evidence: redactString(result.verdict.evidence),
+      rationale: redactString(result.verdict.rationale),
+    },
+    promptOrder(readEvents(projectDir, sessionId), promptId),
+  );
 
   // A verdict that is not pushback cannot complete a pattern.
   if (!isPushback(result.verdict.label)) return;
@@ -539,20 +582,12 @@ export async function reflectForFire(
   const order = promptOrder(events);
   const verdicts = new Map<string, Extract<HookEvent, { t: "verdict" }>>();
   for (const e of events) if (e.t === "verdict") verdicts.set(e.promptId, e);
-  const turns: EvidenceTurn[] = fire.evidence
-    .map((pid): EvidenceTurn | null => {
-      const v = verdicts.get(pid);
-      if (!v) return null;
-      return {
-        turn: order.indexOf(pid) + 1,
-        label: v.label,
-        confidence: v.confidence,
-        priorSummary: v.priorSummary,
-        prompt: v.prompt,
-        evidence: v.evidence,
-      };
-    })
-    .filter((t): t is EvidenceTurn => t !== null);
+  const turns = evidenceTurns(
+    projectDir,
+    sessionId,
+    fire.evidence.map((pid) => verdicts.get(pid)).filter((v): v is Extract<HookEvent, { t: "verdict" }> => v !== undefined),
+    order,
+  );
 
   // The judge checked the cap before its call; the reflection costs far more, so check again.
   if (sessionSpend(events) >= cfg.maxUsdPerSession) {
@@ -560,6 +595,29 @@ export async function reflectForFire(
     return;
   }
   await reflectAndRecord(turns, cfg, projectDir, sessionId, firePromptId, deps, false);
+}
+
+/** Judged messages as the reflection reads them. A message whose text was already dropped is left out. */
+export function evidenceTurns(
+  projectDir: string,
+  sessionId: string,
+  verdicts: Array<Extract<HookEvent, { t: "verdict" }>>,
+  order: string[],
+): EvidenceTurn[] {
+  const out: EvidenceTurn[] = [];
+  for (const v of verdicts) {
+    const text = turnTextFor(projectDir, sessionId, v);
+    if (!text) continue;
+    out.push({
+      turn: order.indexOf(v.promptId) + 1,
+      label: v.label,
+      confidence: v.confidence,
+      priorSummary: text.priorSummary,
+      prompt: text.prompt,
+      evidence: text.evidence,
+    });
+  }
+  return out;
 }
 
 export async function reflectAndRecord(

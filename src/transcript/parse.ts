@@ -60,7 +60,7 @@ const MUTATING_TOOLS = new Set([
 const MUTATING_BASH =
   /(^|[;&|]\s*)(rm|unlink|mv|cp|mkdir|touch|git\s+(revert|restore|checkout|reset|apply|commit|add|rm|mv)|sed\s+-i|npm\s+(i|install|uninstall|publish)|pnpm\s+(add|remove)|yarn\s+(add|remove)|pip\s+install|dd|truncate|chmod|chown)\b|>\s*[^|&\s]/;
 
-function isMutating(name: string, input: Record<string, unknown>): boolean {
+export function isMutating(name: string, input: Record<string, unknown>): boolean {
   if (MUTATING_TOOLS.has(name)) return true;
   if (name === "Bash" || name === "PowerShell") {
     const cmd = String(input["command"] ?? "");
@@ -69,7 +69,7 @@ function isMutating(name: string, input: Record<string, unknown>): boolean {
   return false;
 }
 
-function toolTarget(name: string, input: Record<string, unknown>): string {
+export function toolTarget(name: string, input: Record<string, unknown>): string {
   const fp = input["file_path"] ?? input["path"] ?? input["notebook_path"];
   if (typeof fp === "string" && fp) return fp;
   if (name === "Bash" || name === "PowerShell") {

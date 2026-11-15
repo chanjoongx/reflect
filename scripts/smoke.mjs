@@ -51,20 +51,27 @@ try {
   check("a session opener is skipped without a model call", events.some((e) => e.t === "skip" && e.reason === "session_opener"),
     JSON.stringify(events));
 
-  const t = run(["tool"], { ...hook, tool_name: "Edit" });
+  const t = run(["tool"], { ...hook, tool_name: "Edit", tool_input: { file_path: "src/a.ts" } });
   check("tool hook exits 0 with nothing to deliver", t.code === 0 && t.out === "", t.err);
+
+  const tf = run(["tool-failed"], { ...hook, tool_name: "Bash", tool_input: { command: "npm test" } });
+  check("tool-failed hook exits 0 and stays silent", tf.code === 0 && tf.out === "", tf.err);
+
+  const st = run(["stop"], { ...hook, last_assistant_message: "Added the flag." });
+  check("stop hook exits 0, stays silent and records the turn under .reflect/",
+    st.code === 0 && st.out === "" && existsSync(join(dir, ".reflect", "sessions", "smoke", "agent", "p1.jsonl")), st.err);
 
   const wk = run(["reflect-worker", dir, "smoke", "no-such-fire"]);
   check("a worker with no matching fire exits 0 and writes nothing", wk.code === 0 && wk.out === "" && wk.err === "" &&
     !readdirSync(join(dir, ".reflect", "sessions", "smoke")).some((f) => f.startsWith("reflecting-")), wk.err);
 
-  // The plugin's /brain-reflect: the command does not receive the plugin's key,
-  // and a key in the environment must not be used in its place.
+  // The plugin's /brain-reflect makes no API call, whatever key is around.
+  // (This verdict line is in the 0.2.1 format, so it also covers old logs.)
   const verdict = { t: "verdict", at: new Date().toISOString(), promptId: "p1", label: "correction", confidence: "high",
     evidence: "only the parser", rationale: "", priorSummary: "", prompt: "only the parser", model: "smoke", costUSD: 0, latencyMs: 0 };
   appendFileSync(log, `${JSON.stringify(verdict)}${String.fromCharCode(10)}`);
   const t0 = Date.now();
-  const man = run(["manual", "--agent", "--plugin", "--session", "smoke"], undefined, { ANTHROPIC_API_KEY: "smoke-test-placeholder-not-a-key", CLAUDE_PROJECT_DIR: dir });
+  const man = run(["manual", "--agent", "--plugin", "--session", "smoke"], undefined, { ANTHROPIC_API_KEY: "smoke-test-placeholder-not-a-key", CLAUDE_PLUGIN_OPTION_ANTHROPIC_API_KEY: "smoke-test-placeholder-not-a-key", CLAUDE_PROJECT_DIR: dir });
   check("the plugin's command ignores a key in the environment and makes no API call",
     man.code === 0 && /1 read as pushback/.test(man.out) && /No outside reflection/.test(man.out) && Date.now() - t0 < 5_000, man.out + man.err);
 

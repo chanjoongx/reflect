@@ -61,16 +61,19 @@ test("redactString removes the things it exists to remove", () => {
     ["call 010-1234-5678 please", /<phone>/],
     ["aws AKIA" + "C".repeat(16) + " x", /<aws-key>/],
     ["hf token hf_" + "d".repeat(34), /<hf-token>/],
+    ["write to jane.doe@company.co.uk today", /<email>/],
+    ["US (555) 123-4567 or 555-123-4567", /<phone>/],
+    ["intl +44 20 7946 0958 and +82 10-1234-5678", /<phone>/],
   ];
   for (const [input, expect] of cases) {
     const out = redactString(input);
     assert.match(out, expect, `not redacted: ${input.slice(0, 30)}`);
-    assert.ok(!/someone|person@gmail|sk-ant-a|ghp_b|010-1234|AKIAC|hf_d/.test(out), out);
+    assert.ok(!/someone|person@gmail|sk-ant-a|ghp_b|010-1234|AKIAC|hf_d|jane\.doe|123-4567|7946|1234-5678/.test(out), out);
   }
 });
 
-test("redactString leaves ordinary prose and the public maintainer address alone", () => {
-  const s = "reflect fires when 되돌려 shows up after an Edit — mail cj@chanjoongx.com";
+test("redactString leaves ordinary prose, dates, versions and addresses alone", () => {
+  const s = "reflect fires when 되돌려 shows up after an Edit. v0.2.2 on 2026-11-16, port 8080, 192.168.1.10";
   assert.equal(redactString(s), s);
 });
 

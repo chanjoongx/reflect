@@ -1,24 +1,9 @@
-# Default: let git auto-detect + normalize line endings
-* text=auto
+# Every text file in the repository is committed with LF line endings.
+# Nothing here converts or filters file contents on checkout or in an
+# archive: Anthropic's plugin directory stops validating a repository whose
+# .gitattributes rewrites file contents.
 
-# Shell scripts must be LF so bash can execute them on any platform
-*.sh text eol=lf
-
-# PowerShell scripts: CRLF is fine on Windows; LF works too
-*.ps1 text eol=crlf
-
-# Source files: LF (TypeScript / JavaScript / JSON / YAML / MD)
-*.ts text eol=lf
-*.tsx text eol=lf
-*.js text eol=lf
-*.mjs text eol=lf
-*.cjs text eol=lf
-*.json text eol=lf
-*.yaml text eol=lf
-*.yml text eol=lf
-*.md text eol=lf
-
-# Binary-like files (no line conversion)
+# Binary-like files: no diff, no merge, no line conversion
 *.png binary
 *.jpg binary
 *.jpeg binary
@@ -30,7 +15,7 @@
 *.zip binary
 *.tar.gz binary
 
-# Lock files: keep verbatim
+# Lock files: no textual diff
 package-lock.json -diff
 pnpm-lock.yaml -diff
 yarn.lock -diff

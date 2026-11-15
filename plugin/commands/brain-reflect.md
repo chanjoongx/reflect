@@ -1,6 +1,6 @@
 ---
 description: Ask reflect now why the developer keeps pushing back in this session
-allowed-tools: Bash(node:*)
+allowed-tools: Bash(node *reflect-hook.mjs* manual --agent --plugin --session *)
 ---
 
 ## What reflect found
@@ -11,7 +11,7 @@ allowed-tools: Bash(node:*)
 
 The developer ran `/brain-reflect` because they want you to step back and look at how this session is going.
 
-If the output above contains a reflect note (it has a Pattern line), it was written by a separate model that read the developer's recent messages and what you did just before each one. Tell the developer, in two or three sentences, what it says the pattern is and what you will do differently. Then follow its adjustment, unless it says to ask first or the developer's own words say otherwise.
+If the output above contains a reflect note (it has a Pattern line), it is the note reflect already showed the developer and you, written by a separate model that read the developer's recent messages and what you did just before each one. Tell the developer, in two or three sentences, what it says the pattern is and what you would change. Treat it as a suggestion: the developer's own words decide.
 
 If the output says no outside reflection is available, write one yourself from this conversation. The turns reflect lists as pushback, with the words it quoted, are a good place to start. Look at the developer's last several messages and what you did right before each one. Then tell the developer:
 

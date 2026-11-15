@@ -28,7 +28,7 @@ People rarely push back with git. They type "only the parser, please" or "that's
 
 ## What it does
 
-1. **Judges each message.** For every message you send after the agent's first reply, reflect reads the agent's previous turn from the session transcript (its tool calls and its last words) and asks Claude Haiku 5.5 one question: is this message a correction, a rejection or a failure report, or is it a normal instruction or question? This runs as a background hook and does not hold up your prompt.
+1. **Judges each message.** For every message you send after the agent's first reply, reflect takes the agent's previous turn (its tool calls and its final reply, which reflect's own hooks record as the turn happens) and asks Claude Haiku 5.5 one question: is this message a correction, a rejection or a failure report, or is it a normal instruction or question? This runs as a background hook and does not hold up your prompt.
 2. **Waits for a pattern.** One pushback is normal. When two land within six of your messages, Claude Opus 5.5 reads exactly those turns and writes a short note: what the agent keeps doing, what your pushback is about, what to change for the next few turns, and how the note could be wrong.
 3. **Tells the agent once.** The note arrives as hook context on the agent's next tool call or your next prompt. It stays in force for 3 to 12 turns and comes back after a compaction. When the reviewer is unsure, the note tells the agent to ask you before acting on it. Your own words always win.
 
@@ -48,9 +48,9 @@ Apply the adjustment.
 The developer's own words in the current turn take precedence over this note.
 ```
 
-You see each note too. When the agent receives one, reflect shows a message in your session with the pattern and the adjustment.
+You see each note too. When the agent receives one, reflect shows you the whole note in your session.
 
-Everything reflect keeps is in `.reflect/` in your project, which ignores itself in git. Sessions are deleted after 7 days. Nothing is shared between sessions.
+Everything reflect keeps is in `.reflect/` in your project, which ignores itself in git. The text of your messages is kept for the last 12 only, and the rest of a session's log (labels, notes, costs) is deleted after 7 days. reflect never opens the session transcript. Nothing is shared between sessions.
 
 ## How well it works
 
@@ -140,11 +140,11 @@ All optional.
 | `REFLECT_MAX_USD_PER_SESSION` | `0.5` | Spend cap per session |
 | `REFLECT_DISABLED` | | `1` turns every hook into a no-op |
 
-From a project's `.env`, reflect reads only `REFLECT_*` (and, outside the plugin, `ANTHROPIC_API_KEY`), and never overrides the environment.
+Outside the plugin, reflect also reads a project's `.env`, but only its `ANTHROPIC_API_KEY` and `REFLECT_*` lines, and never overrides the environment. The plugin does not read `.env`, and its settings take precedence over `REFLECT_MODEL` and `REFLECT_MAX_USD_PER_SESSION`.
 
 ## What leaves your machine
 
-Each judged message goes to the Anthropic API with your key: the message (up to 2,500 characters) and a summary of the agent's previous turn (its last 14 tool names with their file or command, and the last 1,400 characters of what it said). A reflection sends the turns that triggered it. Before anything is sent, reflect replaces home directory paths, email addresses, phone numbers and common API key formats with placeholders. Details are in [`plugin/PRIVACY.md`](plugin/PRIVACY.md).
+Each judged message goes to the Anthropic API with your key: the message (up to 2,500 characters) and a summary of the agent's previous turn (its last 14 tool names with their file or command, and the last 1,400 characters of its final reply). A reflection sends the turns that triggered it. Before anything is sent, reflect replaces home directory paths, email addresses, phone numbers and common API key formats with placeholders. Details are in [`plugin/PRIVACY.md`](plugin/PRIVACY.md).
 
 ## Development
 

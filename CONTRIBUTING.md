@@ -36,7 +36,7 @@ npm run smoke          # runs the bundle under plain node, as Claude Code does, 
 npm run mirror-check   # src/redact.ts must match web/lib/redact.ts
 ```
 
-To try your working copy in a real session, run `claude --plugin-dir ./plugin` from the repository root. A gitignored `.claude/settings.json` that points the four hooks at `plugin/hooks/reflect-hook.mjs` works too.
+To try your working copy in a real session, run `claude --plugin-dir ./plugin` from the repository root. A gitignored `.claude/settings.json` that points the hooks at `plugin/hooks/reflect-hook.mjs` works too.
 
 None of these commands calls the API. To exercise the judge or the reflection for real, enter a key in the plugin's settings, or put one in your environment when you wire the hooks by hand; the cost lands on that key.
 

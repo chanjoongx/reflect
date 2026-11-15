@@ -49,3 +49,17 @@ test("a plugin client sends the setting's key to the Anthropic API, whatever the
     }
   }
 });
+
+test("a plugin client clears ANTHROPIC_* from its process, so no custom header or token rides along", async () => {
+  const saved = process.env["ANTHROPIC_CUSTOM_HEADERS"];
+  process.env["ANTHROPIC_CUSTOM_HEADERS"] = "X-Gateway-Auth: secret-from-env";
+  try {
+    const c = await makeClient({}, { CLAUDE_PLUGIN_ROOT: "/p", [SETTING]: "sk-setting" });
+    assert.equal(process.env["ANTHROPIC_CUSTOM_HEADERS"], undefined);
+    const core = (c.messages as unknown as { _client: { _options: { defaultHeaders?: Record<string, string> } } })._client;
+    assert.equal(JSON.stringify(core._options.defaultHeaders ?? {}).includes("secret-from-env"), false);
+  } finally {
+    if (saved === undefined) delete process.env["ANTHROPIC_CUSTOM_HEADERS"];
+    else process.env["ANTHROPIC_CUSTOM_HEADERS"] = saved;
+  }
+});

@@ -3,6 +3,7 @@
  *
  * Reads reflect 0.2's session state:
  *   <project>/.reflect/sessions/<session_id>/events.jsonl   one log per session
+ *   <project>/.reflect/sessions/<session_id>/turns/*.json   a judged message's text (0.2.2)
  *   <project>/.reflect/disabled                             present when reflect is off
  * where <project> is REFLECT_PROJECT_DIR, or the parent of web/ when unset.
  * Falls back to web/fixtures/example-session/ (same layout) when the project
@@ -130,7 +131,34 @@ async function readSession(entry: SessionEntry, cfg: ViewerConfig): Promise<Sess
       badLines++; // a torn line from a killed hook process
     }
   }
-  return buildSession(entry.id, events, cfg, { truncated: raw.truncated, badLines });
+  const dir = path.dirname(entry.log);
+  const withText = await Promise.all(events.map((e) => withTurnText(dir, e)));
+  return buildSession(entry.id, withText, cfg, { truncated: raw.truncated, badLines });
+}
+
+const MAX_TURN_BYTES = 64 * 1024;
+
+/**
+ * Since 0.2.2 a verdict event carries no text. The message, the agent-turn
+ * summary and the judge's quote and reason are in turns/<prompt id>.json next
+ * to the log, kept for the developer's last 12 messages only. Logs from 0.2.0
+ * and 0.2.1 carry the text inline and are returned as they are.
+ */
+async function withTurnText(dir: string, ev: HookEvent): Promise<HookEvent> {
+  if (ev.t !== "verdict" || ev.evidence || ev.prompt) return ev;
+  const turns = path.join(dir, "turns");
+  // The same file name the hook writes (fileId in src/hook/turns.ts).
+  const file = path.join(turns, `${ev.promptId.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 120)}.json`);
+  if (!isInside(file, turns)) return ev;
+  try {
+    const st = await fs.lstat(file);
+    if (!st.isFile() || st.size > MAX_TURN_BYTES) return ev;
+    const t = redactObject(JSON.parse(await fs.readFile(file, "utf8")) as unknown) as Record<string, unknown>;
+    const str = (k: string) => (typeof t[k] === "string" ? (t[k] as string) : "");
+    return { ...ev, prompt: str("prompt"), priorSummary: str("priorSummary"), evidence: str("evidence"), rationale: str("rationale") };
+  } catch {
+    return ev; // dropped after 12 messages, or never written
+  }
 }
 
 const ENV_KEYS = new Set(["REFLECT_POLICY", "REFLECT_MAX_USD_PER_SESSION", "REFLECT_DISABLED"]);

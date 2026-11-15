@@ -6,6 +6,25 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.2.2] 2026-11-16
+
+A review against the plugin directory's policy, before the new submission.
+
+### Changed
+
+- **No transcript.** The hooks no longer open the session transcript. The `tool` hook records each tool call's name and target, two new hooks record failed calls (`PostToolUseFailure`) and the agent's final reply (`Stop`, from `last_assistant_message`), and the judge reads that record once and deletes it. Tool output and file contents are never recorded. Subagent tool calls are ignored. A bare `/compact` no longer counts as the developer answering, so the turn stays open across it.
+- **Less kept.** `events.jsonl` no longer holds message text. The judged message, the turn summary and the judge's quote go to `turns/<prompt id>.json`, and only the developer's last 12 messages keep theirs, the most a reflection or `/reflect:brain-reflect` reads back. An agent turn no judge reads is deleted after a day.
+- **Plugin settings.** As a plugin, reflect does not read the project's `.env`, its settings take precedence over `REFLECT_MODEL` and `REFLECT_MAX_USD_PER_SESSION`, and it removes every `ANTHROPIC_*` variable from its own process before the first API call, so the SDK cannot pick up custom headers or another endpoint.
+- **The whole note.** The message the developer sees carries the full note the agent received, and says so when a note is sent again after a compaction.
+- **`/reflect:brain-reflect`** runs only its own command (`allowed-tools` is narrowed to it) and never calls the API, whatever key is around.
+- **Redaction** matches any email address and US and international phone numbers. The shipped redactor no longer contains anything specific to the author.
+- **Viewer.** `web/` reads a verdict's text from `turns/` when the log line has none.
+
+### Removed
+
+- The SDK's agent toolset module, which reflect never calls and which carries shell and download code, is replaced by an empty module in the bundle.
+- `export-subst` and other content rewriting attributes in `.gitattributes`, which stop the plugin directory from validating the repository.
+
 ## [0.2.1] 2026-11-16
 
 Changes for Anthropic's plugin directory, which declined 0.1.4.

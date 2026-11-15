@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated: 2026-11-16, for reflect 0.2.1**
+**Last updated: 2026-11-16, for reflect 0.2.2**
 
 reflect runs on your machine as Claude Code hooks and a command-line tool. It has no server, no account, no telemetry and no analytics. The only network calls it makes go to the Anthropic API (`https://api.anthropic.com`), with your own API key, and are billed to that key.
 
@@ -11,7 +11,7 @@ reflect runs on your machine as Claude Code hooks and a command-line tool. It ha
 **Each judged message** (Claude Haiku 5.5). Sent for every message you type in a session, except the first one and any message that does not follow an agent turn:
 
 - your message, cut to 2,500 characters;
-- a summary of the agent's turn just before it: the names of its last 14 tool calls with the file or command each one touched (each cut to 120 characters), whether each changed a file or failed, and the last 1,400 characters of what the agent said.
+- a summary of the agent's turn just before it: the names of its last 14 tool calls with the file or command each one touched (each cut to 120 characters), whether each changed a file or failed, and the last 1,400 characters of the agent's final reply.
 
 **Each reflection** (Claude Opus 5.5 by default, or the model you configure). Sent only when the trigger fires, or when you run `reflect manual` from a terminal. The plugin's `/reflect:brain-reflect` command sends nothing:
 
@@ -20,7 +20,7 @@ reflect runs on your machine as Claude Code hooks and a command-line tool. It ha
 
 Before either request leaves your machine, reflect replaces these with placeholders: home directory paths (`C:\Users\<you>`, `/Users/<you>`, `/home/<you>`), email addresses, phone numbers, Anthropic, GitHub, npm, Hugging Face, Slack and AWS keys, and private key blocks. The replacement is pattern matching, so a secret in an unusual format can get through. Do not paste secrets into a Claude Code prompt.
 
-reflect never reads your source files. It sees file names only as they appear in the agent's tool calls in the session transcript. It reads only the transcript of the session it runs in, at the path Claude Code passes to its hooks, and never other sessions or Claude's memory.
+reflect does not open the session transcript, other sessions, Claude's memory or your source files. It works from the fields Claude Code passes to each of its hooks and keeps only these: your message (UserPromptSubmit), the name of each tool the agent calls with the file, command or URL it touched (PostToolUse and PostToolUseFailure), and the agent's final reply for the turn (Stop). It never records tool output or the contents of files the agent writes, and it ignores tool calls made inside subagents.
 
 The requests are governed by Anthropic's terms for your API key and its privacy policy: https://www.anthropic.com/legal/privacy
 
@@ -30,7 +30,9 @@ Everything is under `.reflect/` in the project:
 
 | file | contents | removed |
 |---|---|---|
-| `.reflect/sessions/<session>/events.jsonl` | one line per event: each message's length and verdict, the judged message (redacted, up to 1,500 characters) and the agent-turn summary, the reflection, costs, errors | when a new session starts and the session is more than 7 days old |
+| `.reflect/sessions/<session>/events.jsonl` | one line per event: each message's length and the judge's label, the notes, costs and errors | when a new session starts and the session is more than 7 days old |
+| `.reflect/sessions/<session>/agent/` | the agent's turn after one of your messages: tool names with their file or command, whether each failed, and the final reply (up to 4,000 characters), redacted | when your next message is judged, or when a session starts more than a day later |
+| `.reflect/sessions/<session>/turns/` | for a judged message: the message (up to 1,500 characters), the agent-turn summary (up to 2,000) and the judge's quote and reason, redacted | as soon as it is no longer among your last 12 messages, and with the session after 7 days |
 | `.reflect/session-guidance.md` | the latest reflection, for you to read | overwritten by the next one |
 | `.reflect/.gitignore` | `*`, so none of this is committed | |
 | `.reflect/disabled` | present only after `reflect off` | `reflect on` |
@@ -39,9 +41,7 @@ reflect writes nothing outside `.reflect/`. Delete the folder at any time; refle
 
 ## Credentials
 
-As an installed plugin, reflect uses one credential: the API key you enter in the plugin's settings. Claude Code keeps it in your system's credential store and passes it only to reflect's hook processes. reflect ignores any other key, token or profile on your machine, and sends this key only to `https://api.anthropic.com`. It never prints, logs or stores a key.
-
-Run outside the plugin system, as a command-line tool or with hooks you wire into your settings by hand, reflect can also use the key the Anthropic SDK finds in your environment. The [project README](https://github.com/chanjoongx/reflect#configuration) describes that setup.
+reflect uses one credential: the API key you enter in the plugin's settings. Claude Code keeps it in your system's credential store and passes it only to reflect's hook processes. reflect does not read `.env` files, and it ignores any other key, token or login profile on your machine. Before its first API call it removes every `ANTHROPIC_*` variable from its own process and passes the key to the SDK with a fixed address, so the key goes only to `https://api.anthropic.com`. It never prints, logs or stores a key.
 
 ## Turning it off
 

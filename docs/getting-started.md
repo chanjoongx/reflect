@@ -119,7 +119,9 @@ reflect init
       { "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "prompt"], "timeout": 10 },
       { "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "judge"], "async": true }
     ] }],
-    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "tool"], "timeout": 10 }] }]
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "tool"], "timeout": 10 }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "tool-failed"], "timeout": 10 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<package>/plugin/hooks/reflect-hook.mjs", "stop"], "timeout": 10 }] }]
   }
 }
 ```
@@ -133,7 +135,9 @@ Everything goes under `.reflect/` in the project:
 | path | what |
 |---|---|
 | `.reflect/.gitignore` | `*`, written on first use, so nothing here is committed by accident |
-| `.reflect/sessions/<session id>/events.jsonl` | One JSON line per event: each prompt, verdict, skip, fire, note and delivery. Session folders older than 7 days are deleted when a new session starts. |
+| `.reflect/sessions/<session id>/events.jsonl` | One JSON line per event: each prompt, verdict, skip, fire, note and delivery, without message text. Session folders older than 7 days are deleted when a new session starts. |
+| `.reflect/sessions/<session id>/agent/` | The agent's turn after one of your messages, recorded by the `tool`, `tool-failed` and `stop` hooks. Deleted once the judge reads it, or after a day. |
+| `.reflect/sessions/<session id>/turns/` | The text of a judged message, the agent-turn summary and the judge's quote, for your last 12 messages only. |
 | `.reflect/session-guidance.md` | The latest note, for you to read |
 | `.reflect/disabled` | Present only after `reflect off` |
 

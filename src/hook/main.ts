@@ -6,7 +6,7 @@
 // bundles it with its dependencies into plugin/hooks/reflect-hook.mjs, so a plugin
 // install needs nothing but `node`, and the npm `reflect` bin is the same file.
 //
-//   node reflect-hook.mjs <session-start|prompt|judge|tool>   (from hooks.json, JSON on stdin)
+//   node reflect-hook.mjs <session-start|prompt|judge|tool|tool-failed|stop>  (from hooks.json, JSON on stdin)
 //   node reflect-hook.mjs <status|manual|doctor|init|on|off>  (the CLI, same code)
 //   node reflect-hook.mjs reflect-worker <dir> <session> <id>  (started by the judge hook)
 

@@ -6,7 +6,7 @@ Everything runs from one TypeScript source tree in `src/`. `scripts/build-hook.m
 
 ## The hook flow
 
-`plugin/hooks/hooks.json` registers four hook commands, all of the form `node ${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs <mode>`. The dispatch is in `src/hook/main.ts`; what each mode does is in `src/hook/run.ts`.
+`plugin/hooks/hooks.json` registers six hook commands, all of the form `node ${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs <mode>`. The dispatch is in `src/hook/main.ts`; what each mode does is in `src/hook/run.ts`.
 
 ```mermaid
 flowchart TD
@@ -26,6 +26,9 @@ flowchart TD
     REF --> G["guidance event and<br/>.reflect/session-guidance.md"]
     G -. pending .-> T["PostToolUse: tool (sync)"]
     G -. pending .-> PR
+    T -- records the call --> AT["the agent's turn<br/>.reflect/sessions/(id)/agent/"]
+    TF["PostToolUseFailure: tool-failed<br/>Stop: stop"] --> AT
+    AT -. read once, then deleted .-> PAIR
     T --> CTX["additionalContext to the agent,<br/>delivered once"]
     PR --> CTX
     SS["SessionStart: session-start (sync)"] --> SS2["startup: prune old sessions<br/>compact or resume: re-deliver a note still in force"]
@@ -37,23 +40,25 @@ flowchart TD
 | `session-start` | SessionStart | sync, 10 s timeout | On `startup`, deletes session logs older than 7 days. On `compact` or `resume`, re-delivers guidance that is still in force. |
 | `prompt` | UserPromptSubmit | sync, 10 s timeout | Appends a `prompt` event and delivers any pending guidance. |
 | `judge` | UserPromptSubmit | `async: true` | Pair, gate, judge and trigger. A fire starts the reflection in a detached worker process. |
-| `tool` | PostToolUse | sync, 10 s timeout | Delivers pending guidance in the middle of a turn, before the agent's next edit. |
+| `tool` | PostToolUse | sync, 10 s timeout | Records the tool's name and target for the judge, then delivers pending guidance in the middle of a turn, before the agent's next edit. |
+| `tool-failed` | PostToolUseFailure | sync, 10 s timeout | Records the failed call. |
+| `stop` | Stop | sync, 10 s timeout | Records the agent's final reply from `last_assistant_message`. |
 
-Every mode exits 0. A hook never blocks a prompt or a tool call; an exception becomes an `error` event in the session log and nothing else.
+A tool call with an `agent_id` comes from a subagent. It is not recorded and gets no guidance. Every mode exits 0. A hook never blocks a prompt or a tool call; an exception becomes an `error` event in the session log and nothing else.
 
 ## One developer message, step by step
 
 This is `judgeTurn` in `src/hook/run.ts`.
 
 1. **Budget and auth.** If the session has already spent its cap (`REFLECT_MAX_USD_PER_SESSION`, default $0.50) or an earlier call failed authentication, stop here.
-2. **Pair.** Read the last 8 MB of the Claude Code transcript and build the pair with `pairForPrompt` in `src/transcript/parse.ts`. This is the same transcript walker the benchmark used to build its corpus.
+2. **Pair.** `takeAgentTurn` in `src/hook/turns.ts` reads what the `tool`, `tool-failed` and `stop` hooks recorded since the developer's previous message, then deletes it. A bare `/compact` or another harness command is not the developer answering, so it is skipped and the agent's turn stays open across it. The pair has the same shape as the benchmark's, which `pairForPrompt` in `src/transcript/parse.ts` built from transcripts: tool names and targets, whether each changed a file or failed, and the agent's words. The hooks never read the transcript.
 3. **Gate.** `src/detect/structural.ts` has one hard rule: if there is no agent turn before this message (a session opener, or a second message sent before the agent replied), skip without calling anything.
-4. **Judge.** `src/detect/judge.ts` sends the pair to Claude Haiku 5.5 with a JSON-schema output format. The label is one of seven; `correction`, `rejection` and `failure_report` count as pushback, while `instruction`, `question`, `affirmation` and `other` do not. Thinking is off and effort is low.
+4. **Judge.** `src/detect/judge.ts` sends the pair to Claude Haiku 5.5 with a JSON-schema output format. The label is one of seven; `correction`, `rejection` and `failure_report` count as pushback, while `instruction`, `question`, `affirmation` and `other` do not. Thinking is off and effort is low. The `verdict` event keeps the label, confidence and cost. The message, the turn summary and the judge's quote and reason go to `turns/<prompt id>.json`, which only the developer's last 12 messages keep.
 5. **Trigger.** `src/trigger/accumulator.ts` replays every verdict in the session through a sliding window counted in developer turns. The default policy `k2w6` fires on 2 pushbacks within 6 turns, then waits 3 turns before it can fire again. `REFLECT_POLICY` picks another: `each`, `k2w4`, `k2w8`, `k3w8` or `k2w6-med` (which ignores low-confidence verdicts).
 6. **Reflection.** `src/reflect/reflection.ts` sends exactly the turns that tripped the trigger to Claude Opus 5.5. Each turn carries a summary of what the agent had just done, the developer's words and the span the judge quoted as evidence. The call uses adaptive thinking at effort `high`, and the server-side fallback beta, so a refusal is retried on a fallback model inside the same request. It runs in a separate process (`reflect-worker`) that the judge hook starts detached: `claude -p` ends the hook's process as soon as the agent answers, which in a short turn comes before the reflection does (a live test on 2026-11-16 lost its first note this way). If the worker cannot start, the judge hook runs the reflection itself. The output schema (`src/reflect/schema.ts`) has `pattern`, `signal`, `adjustment`, `confidence`, `scope`, `false_trigger_likelihood`, `counter_hypothesis`, `verify` and `expires_after_turns` (3 to 12).
-7. **Delivery.** `src/reflect/format.ts` turns the reflection into at most 2,400 characters of `additionalContext`. The next `tool` or `prompt` hook hands it to the agent and records a `delivered` event, so it arrives once. The same hook output carries a `systemMessage` with the note's pattern and adjustment, so the developer sees what the agent was told, and a copy goes to `.reflect/session-guidance.md`.
+7. **Delivery.** `src/reflect/format.ts` turns the reflection into at most 2,400 characters of `additionalContext`. The next `tool` or `prompt` hook hands it to the agent and records a `delivered` event, so it arrives once. The same hook output carries a `systemMessage` with the whole note, so the developer sees exactly what the agent was told, and a copy goes to `.reflect/session-guidance.md`.
 
-`reflect manual` and the `/reflect:brain-reflect` command do not wait for the trigger. They send the last N judged turns (default 6, at most 12) to the reflection model and tell it some of them may not be pushback. They do not check the spend cap.
+`reflect manual` does not wait for the trigger. It sends the last N judged turns whose text is still kept (default 6, at most 12) to the reflection model and tells it some of them may not be pushback. It does not check the spend cap. The plugin's `/reflect:brain-reflect` makes no API call: it lists which of those turns read as pushback, with the judge's quotes, and asks the agent to reflect on them.
 
 ## Design decisions
 
@@ -87,7 +92,7 @@ The note goes in through `additionalContext` on the first `tool` or `prompt` hoo
 
 ### An append-only log per session
 
-State lives in `.reflect/sessions/<session_id>/events.jsonl`, one JSON line per event: `prompt`, `verdict`, `skip`, `fire`, `guidance`, `delivered` and `error`. Status, spend and pending guidance are all derived by reading the log back (`src/hook/state.ts`). 0.1 kept one JSON object per project and rewrote it from two hooks with `grep` and `sed`. PostToolUse fires once per parallel tool call, so those writers lost updates.
+State lives in `.reflect/sessions/<session_id>/events.jsonl`, one JSON line per event: `prompt`, `verdict`, `skip`, `fire`, `guidance`, `delivered` and `error`. Status, spend and pending guidance are all derived by reading the log back (`src/hook/state.ts`). Since 0.2.2 the log holds no message text. That lives next to it, in `agent/` until the judge has read a turn and in `turns/` for the developer's last 12 messages (`src/hook/turns.ts`). 0.1 kept one JSON object per project and rewrote it from two hooks with `grep` and `sed`. PostToolUse fires once per parallel tool call, so those writers lost updates.
 
 The one step that reads, decides and writes is the trigger. It runs under an exclusive-create lock file (`fire.lock`, treated as stale after 120 s), so two judges finishing together cannot both fire on the same pattern. The reflection runs outside the lock, in the worker, and a claim file (`reflecting-<id>`) makes sure one fire gets one reflection.
 
@@ -95,13 +100,13 @@ The one step that reads, decides and writes is the trigger. It runs under an exc
 
 ### One bundled hook
 
-A plugin install copies the `plugin/` folder: there is no `npm install` and no build step on the user's machine. So the hook ships as committed ES modules with the Anthropic SDK inside them, and the package has no runtime dependencies. The entry file is about 48 KB. `src/api/client.ts` loads the SDK in three pieces, the client core, the Messages API and the beta Messages API, and only the judge and the reflection load them, so the `prompt`, `tool` and `session-start` hooks, which run on every message and tool call, never parse the SDK. Loaded that way, the bundler keeps only the parts reflect calls (about 530 KB in all, against 1.3 MB for the whole SDK), and no file passes 256 KiB, the size at which Anthropic's plugin directory holds a file for a reviewer. The build fails if one does. `npm run check:bundle` fails CI if the committed bundle does not match `src/`.
+A plugin install copies the `plugin/` folder: there is no `npm install` and no build step on the user's machine. So the hook ships as committed ES modules with the Anthropic SDK inside them, and the package has no runtime dependencies. The entry file is about 48 KB. `src/api/client.ts` loads the SDK in three pieces, the client core, the Messages API and the beta Messages API, and only the judge and the reflection load them, so the `prompt`, `tool` and `session-start` hooks, which run on every message and tool call, never parse the SDK. Loaded that way, the bundler keeps only the parts reflect calls (about 530 KB in all, against 1.3 MB for the whole SDK), and no file passes 256 KiB, the size at which Anthropic's plugin directory holds a file for a reviewer. The build fails if one does. The build also swaps the SDK's agent toolset module, which reflect never calls and which carries shell and download code, for an empty module. `npm run check:bundle` fails CI if the committed bundle does not match `src/`.
 
 0.1 had the same detector in five implementations (two bash hooks, two PowerShell hooks and a TypeScript reference), documented as divergent.
 
 ## Credentials and spend
 
-As an installed plugin, reflect uses one credential, the plugin's `anthropic_api_key` setting, and sends it only to `https://api.anthropic.com`. Claude Code sets `CLAUDE_PLUGIN_ROOT` for a plugin's hooks, which is how they know; the plugin's command passes `--plugin` because commands do not get that variable. In that mode a project's `.env` contributes only `REFLECT_*` lines. Outside the plugin, the key comes from, in order: `ANTHROPIC_API_KEY` in the environment, the project's `.env` (only `ANTHROPIC_API_KEY` and `REFLECT_*` are read from it, and they never override the environment), the plugin setting, and then whatever the SDK finds on its own, such as an `ant auth login` profile. A Claude subscription login alone does not give the hooks an API key. If the judge fails authentication (a 401 or 403, or no key found), the hooks make no more API calls in that session.
+As an installed plugin, reflect uses one credential, the plugin's `anthropic_api_key` setting, and sends it only to `https://api.anthropic.com`. Claude Code sets `CLAUDE_PLUGIN_ROOT` for a plugin's hooks, which is how they know; the plugin's command passes `--plugin` because commands do not get that variable. In that mode reflect does not read the project's `.env`, the plugin's settings take precedence over `REFLECT_MODEL` and `REFLECT_MAX_USD_PER_SESSION`, and `src/api/client.ts` removes every `ANTHROPIC_*` variable from the process before it creates the client, so the SDK cannot pick up a base URL, custom headers or another key from the environment. Outside the plugin, the key comes from, in order: `ANTHROPIC_API_KEY` in the environment, the project's `.env` (only `ANTHROPIC_API_KEY` and `REFLECT_*` are read from it, and they never override the environment), the plugin setting, and then whatever the SDK finds on its own, such as an `ant auth login` profile. A Claude subscription login alone does not give the hooks an API key. If the judge fails authentication (a 401 or 403, or no key found), the hooks make no more API calls in that session.
 
 Each `verdict` and `guidance` event records its cost from `src/pricing.ts`; a model the table does not list is charged at the table's highest rate. The cap is checked before each judge call and again before each reflection, so only judge calls already in flight can take a session past it. Estimates are in [`docs/cost.md`](docs/cost.md).
 
@@ -114,7 +119,8 @@ The measured numbers come from `bench/FINDINGS.md` (August 2026, with the judge 
 - **One developer, one language pair.** The corpus is 224 sessions from one person writing in Korean and English. The precision and recall figures may not transfer.
 - **Duplicates.** The 837 rows hold 685 distinct prompts (the largest group is 30 identical automated health checks), so the effective sample is smaller than 837.
 - **Chosen in-sample.** The gate setting and the `k2w6` default were both picked on the rows that report the result.
-- **Main thread only.** Subagent transcripts were excluded from the benchmark.
+- **Main thread only.** Subagent transcripts were excluded from the benchmark, and the hooks ignore subagent tool calls.
+- **The agent's words.** The benchmark's pairs took the agent's text from the transcript, including what it wrote between tool calls. Since 0.2.2 the hooks see only its final reply, so after a short final reply the judge sees less than it did in the benchmark. This has not been measured.
 - **Detection only.** Whether a reflection makes the next turns better has not been tested.
 
 Some limits are in the design itself:

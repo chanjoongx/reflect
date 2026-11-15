@@ -34,18 +34,27 @@ export const STATE_DIR = ".reflect";
 export const SESSION_TTL_DAYS = 7;
 
 export type HookEvent =
-  | { t: "prompt"; at: string; promptId: string; chars: number }
+  | {
+      t: "prompt";
+      at: string;
+      promptId: string;
+      chars: number;
+      /** A command such as `/compact` with nothing after it: not a developer turn, so the agent's turn stays open. */
+      bookkeeping?: true;
+    }
   | {
       t: "verdict";
       at: string;
       promptId: string;
       label: Label;
       confidence: "low" | "medium" | "high";
-      evidence: string;
-      rationale: string;
-      /** Rendered prior turn, kept so a reflection can quote what the agent did. */
-      priorSummary: string;
-      prompt: string;
+      // Since 0.2.2 the text of a judged message lives in turns/<promptId>.json
+      // (see ./turns.ts), and only the newest few are kept. Logs written by
+      // 0.2.0 and 0.2.1 carry it here.
+      evidence?: string;
+      rationale?: string;
+      priorSummary?: string;
+      prompt?: string;
       model: string;
       costUSD: number;
       latencyMs: number;
@@ -84,7 +93,7 @@ export function sessionDir(projectDir: string, sessionId: string): string {
   return join(stateRoot(projectDir), "sessions", safeSessionId(sessionId));
 }
 
-function ensureRoot(projectDir: string): void {
+export function ensureRoot(projectDir: string): void {
   const root = stateRoot(projectDir);
   mkdirSync(root, { recursive: true });
   const gi = join(root, ".gitignore");

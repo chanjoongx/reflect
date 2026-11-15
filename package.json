@@ -67,7 +67,7 @@
     "build": "node scripts/build-hook.mjs",
     "check:bundle": "node scripts/build-hook.mjs --check",
     "reflect": "tsx src/entry.ts",
-    "test": "npm run typecheck && node --test --import tsx \"src/**/*.test.ts\" \"bench/**/*.test.ts\"",
+    "test": "npm run typecheck && node scripts/test.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p bench/tsconfig.json",
     "mirror-check": "diff -q src/redact.ts web/lib/redact.ts",
     "viewer": "npm run preview --prefix web",

@@ -1,16 +1,16 @@
 /**
- * Pure-client-side pattern clustering over LogEntry[].
+ * Pure-client-side pattern clustering over the notes of every recorded session.
  *
- * Approach: token-set Jaccard similarity on the `pattern` field,
- * agglomerative (connected-component) over 0.35 threshold. Each cluster gets:
+ * Approach: token-set Jaccard similarity on each note's pattern and
+ * adjustment, connected components over the threshold. Each cluster gets:
  *   - label (top 2 shared tokens)
- *   - synthesis (the `confidence: high` reflection body, truncated 80ch)
- *   - sparkline (count per day across the window)
+ *   - synthesis (the pattern of a high-confidence note, truncated)
+ *   - sparkline (count per time bucket across the cluster's span)
  *
  * Deterministic. No external calls.
  */
 
-import type { LogEntry, PatternCluster, Reflection } from "./types";
+import type { NoteView, PatternCluster } from "./types";
 
 const STOPWORDS = new Set([
   "the",
@@ -41,6 +41,10 @@ const STOPWORDS = new Set([
   "my",
   "your",
   "user",
+  "agent",
+  "developer",
+  "asked",
+  "only",
   "reflect",
   "each",
   "again",
@@ -113,18 +117,16 @@ function topShared(sets: Set<string>[]): string[] {
     .map(([t]) => t);
 }
 
-function bestSynthesis(entries: LogEntry[]): string {
-  const high = entries.find(
-    (e) => (e.reflection.confidence as Reflection["confidence"]) === "high",
-  );
-  const source = (high ?? entries[0])?.reflection.pattern ?? "";
+function bestSynthesis(entries: NoteView[]): string {
+  const high = entries.find((e) => e.note.confidence === "high");
+  const source = (high ?? entries[0])?.note.pattern ?? "";
   if (source.length <= 120) return source;
   return source.slice(0, 117).replace(/\s+\S*$/, "") + "…";
 }
 
-function sparkline(entries: LogEntry[], buckets = 7): number[] {
+function sparkline(entries: NoteView[], buckets = 7): number[] {
   if (entries.length === 0) return Array(buckets).fill(0);
-  const ts = entries.map((e) => new Date(e.timestamp).getTime()).sort((a, b) => a - b);
+  const ts = entries.map((e) => new Date(e.at).getTime()).sort((a, b) => a - b);
   const first = ts[0]!;
   const last = ts[ts.length - 1]!;
   const span = Math.max(1, last - first);
@@ -137,13 +139,11 @@ function sparkline(entries: LogEntry[], buckets = 7): number[] {
   return out;
 }
 
-export function clusterReflections(entries: LogEntry[], threshold = 0.22): PatternCluster[] {
+export function clusterReflections(entries: NoteView[], threshold = 0.22): PatternCluster[] {
   if (entries.length === 0) return [];
 
   // Compute token sets for each entry (on pattern + adjustment together for richer signal)
-  const tokenSets = entries.map((e) =>
-    tokenize(`${e.reflection.pattern} ${e.reflection.adjustment}`),
-  );
+  const tokenSets = entries.map((e) => tokenize(`${e.note.pattern} ${e.note.adjustment}`));
 
   // Union-find
   const parent: number[] = entries.map((_, i) => i);
@@ -185,7 +185,7 @@ export function clusterReflections(entries: LogEntry[], threshold = 0.22): Patte
     const label =
       shared.length >= 2
         ? `${shared[0]} · ${shared[1]}`
-        : shared[0] ?? "miscellaneous";
+        : shared[0] ?? (cl_entries.length === 1 ? "single note" : "miscellaneous");
     clusters.push({
       id: `c${cid++}`,
       label,

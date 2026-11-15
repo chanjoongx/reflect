@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 
-import { runHook, withProjectEnv, type HookDeps, type HookInput } from "./run.js";
+import { reflectForFire, runHook, withProjectEnv, type HookDeps, type HookInput } from "./run.js";
 import { appendEvent, pruneSessions, readEvents, sessionDir } from "./state.js";
 import { capCostUSD, costUSD } from "../pricing.js";
 import type { JudgeOptions, JudgeResult } from "../detect/judge.js";
@@ -460,4 +460,54 @@ test("IDE context blocks are not read as the developer's words", () => {
   ].join("\n");
   const pair = pairForPrompt(raw, "<ide_opened_file>The user opened src/q.ts in the IDE.</ide_opened_file> leave q alone", { sessionId: "S" });
   assert.equal(pair.prompt.trim(), "leave q alone");
+});
+
+test("a fire hands the reflection to a worker, which writes the note once", async () => {
+  const w = world();
+  const started: string[] = [];
+  w.deps.detach = (_dir, _sid, id) => {
+    started.push(id);
+    return true;
+  };
+  try {
+    await turn(w, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed, and tidied b.", ["src/a.ts", "src/b.ts"]);
+    await turn(w, "p2", "Leave src/b.ts alone", "correction", "Reverted.", ["src/b.ts"]);
+    await turn(w, "p3", "Only src/a.ts!", "correction", "Ok.", ["src/a.ts"]);
+    assert.deepEqual(started, ["p3"]);
+    assert.equal(w.reflections, 0);
+    await reflectForFire(w.dir, "S", "p3", w.deps);
+    await reflectForFire(w.dir, "S", "p3", w.deps);
+    assert.equal(w.reflections, 1);
+    const g = readEvents(w.dir, "S").filter((e) => e.t === "guidance");
+    assert.equal(g.length, 1);
+    ctx(await runHook("tool", { session_id: "S", cwd: w.dir }, w.dir, w.deps));
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("when the worker cannot start, the judge hook reflects itself", async () => {
+  const w = await (async () => {
+    const x = world();
+    x.deps.detach = () => false;
+    await turn(x, "p1", "Fix the bug in src/a.ts please", "instruction", "Fixed, and tidied b.", ["src/a.ts", "src/b.ts"]);
+    await turn(x, "p2", "Leave src/b.ts alone", "correction", "Reverted.", ["src/b.ts"]);
+    await turn(x, "p3", "Only src/a.ts!", "correction", "Ok.", ["src/a.ts"]);
+    return x;
+  })();
+  try {
+    assert.equal(w.reflections, 1);
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("a worker for a prompt that never fired does nothing", async () => {
+  const w = await firedWorld();
+  try {
+    await reflectForFire(w.dir, "S", "p2", w.deps);
+    assert.equal(w.reflections, 1);
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
 });

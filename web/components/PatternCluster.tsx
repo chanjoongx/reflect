@@ -9,18 +9,7 @@ import { cn } from "@/lib/cn";
 
 export interface PatternClusterProps {
   cluster: PatternClusterType;
-  /**
-   * Map of entry-identity → global log index. Used to link each row in the
-   * reflection list to `/reflections#{globalIndex}`. Identity key is
-   * `${session_id}|${timestamp}` which is unique per log entry in practice.
-   * Missing keys fall back to the local position inside the cluster.
-   */
-  indexByKey?: Map<string, number>;
   className?: string;
-}
-
-function entryKey(e: PatternClusterType["entries"][number]): string {
-  return `${e.session_id}|${e.timestamp}`;
 }
 
 /**
@@ -28,7 +17,7 @@ function entryKey(e: PatternClusterType["entries"][number]): string {
  * synthesis, keyword chips, and a client-wrapped accordion for the
  * per-reflection rows.
  */
-export function PatternCluster({ cluster, indexByKey, className }: PatternClusterProps) {
+export function PatternCluster({ cluster, className }: PatternClusterProps) {
   const hasKeywords = cluster.shared_keywords.length > 0;
 
   return (
@@ -98,17 +87,9 @@ export function PatternCluster({ cluster, indexByKey, className }: PatternCluste
         {/* Footer — collapsible reflection list */}
         <div className="mt-auto pt-2 border-t border-white/5">
           <ClusterDetails count={cluster.count}>
-            {cluster.entries.map((entry, i) => {
-              const globalIdx = indexByKey?.get(entryKey(entry)) ?? i;
-              return (
-                <ReflectionListItem
-                  key={`${entry.timestamp}-${i}`}
-                  entry={entry}
-                  index={globalIdx}
-                  routePrefix="/reflections"
-                />
-              );
-            })}
+            {cluster.entries.map((note) => (
+              <ReflectionListItem key={note.id} note={note} routePrefix="/reflections" />
+            ))}
           </ClusterDetails>
         </div>
       </Card>

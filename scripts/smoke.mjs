@@ -54,6 +54,10 @@ try {
   const t = run(["tool"], { ...hook, tool_name: "Edit" });
   check("tool hook exits 0 with nothing to deliver", t.code === 0 && t.out === "", t.err);
 
+  const wk = run(["reflect-worker", dir, "smoke", "no-such-fire"]);
+  check("a worker with no matching fire exits 0 and writes nothing", wk.code === 0 && wk.out === "" && wk.err === "" &&
+    !readdirSync(join(dir, ".reflect", "sessions", "smoke")).some((f) => f.startsWith("reflecting-")), wk.err);
+
   const bad = spawnSync(process.execPath, [bundle, "prompt"], { input: "{not json", env: baseEnv, encoding: "utf8" });
   check("malformed stdin still exits 0", bad.status === 0, bad.stderr);
 

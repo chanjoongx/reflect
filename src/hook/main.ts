@@ -8,8 +8,22 @@
 //
 //   node reflect-hook.mjs <session-start|prompt|judge|tool>   (from hooks.json, JSON on stdin)
 //   node reflect-hook.mjs <status|manual|doctor|init|on|off>  (the CLI, same code)
+//   node reflect-hook.mjs reflect-worker <dir> <session> <id>  (started by the judge hook)
 
-import { HOOK_MODES, defaultDeps, projectDirOf, runHook, withProjectEnv, type HookInput, type HookMode } from "./run.js";
+import { existsSync } from "node:fs";
+import { appendEvent, isDisabled, now } from "./state.js";
+import { redactString, safeTruncate } from "../redact.js";
+import {
+  HOOK_MODES,
+  WORKER_MODE,
+  defaultDeps,
+  projectDirOf,
+  reflectForFire,
+  runHook,
+  withProjectEnv,
+  type HookInput,
+  type HookMode,
+} from "./run.js";
 import { runCli } from "../cli/cli.js";
 
 async function readStdin(): Promise<string> {
@@ -39,6 +53,27 @@ export async function main(argv: string[]): Promise<number> {
     const env = withProjectEnv(projectDir, process.env);
     const out = await runHook(mode as HookMode, input, projectDir, defaultDeps(env));
     if (out) await writeOut(out + "\n");
+    return 0;
+  }
+  if (mode === WORKER_MODE) {
+    const [, projectDir, sessionId, firePromptId] = argv;
+    if (!projectDir || !sessionId || !firePromptId || !existsSync(projectDir)) return 0;
+    const env = withProjectEnv(projectDir, process.env);
+    if (isDisabled(projectDir, env)) return 0;
+    try {
+      await reflectForFire(projectDir, sessionId, firePromptId, defaultDeps(env));
+    } catch (e) {
+      try {
+        appendEvent(projectDir, sessionId, {
+          t: "error",
+          at: now(),
+          where: "reflection",
+          message: safeTruncate(redactString(e instanceof Error ? e.message : String(e)), 400),
+        });
+      } catch {
+        /* nowhere left to report it */
+      }
+    }
     return 0;
   }
   return runCli(argv);

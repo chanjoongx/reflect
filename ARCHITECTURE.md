@@ -22,7 +22,7 @@ flowchart TD
     PB -- no --> DONE["done"]
     PB -- yes --> ACC{"trigger, under a lock:<br/>2 pushbacks in 6 turns?"}
     ACC -- no --> DONE
-    ACC -- yes --> REF["Claude Opus 5.5 reflection<br/>on the pushback turns only"]
+    ACC -- yes --> REF["detached worker: Claude Opus 5.5<br/>reflection on the pushback turns only"]
     REF --> G["guidance event and<br/>.reflect/session-guidance.md"]
     G -. pending .-> T["PostToolUse: tool (sync)"]
     G -. pending .-> PR
@@ -36,7 +36,7 @@ flowchart TD
 |---|---|---|---|
 | `session-start` | SessionStart | sync, 10 s timeout | On `startup`, deletes session logs older than 7 days. On `compact` or `resume`, re-delivers guidance that is still in force. |
 | `prompt` | UserPromptSubmit | sync, 10 s timeout | Appends a `prompt` event and delivers any pending guidance. |
-| `judge` | UserPromptSubmit | `async: true` | Pair, gate, judge, trigger and, when it fires, the reflection. |
+| `judge` | UserPromptSubmit | `async: true` | Pair, gate, judge and trigger. A fire starts the reflection in a detached worker process. |
 | `tool` | PostToolUse | sync, 10 s timeout | Delivers pending guidance in the middle of a turn, before the agent's next edit. |
 
 Every mode exits 0. A hook never blocks a prompt or a tool call; an exception becomes an `error` event in the session log and nothing else.
@@ -50,7 +50,7 @@ This is `judgeTurn` in `src/hook/run.ts`.
 3. **Gate.** `src/detect/structural.ts` has one hard rule: if there is no agent turn before this message (a session opener, or a second message sent before the agent replied), skip without calling anything.
 4. **Judge.** `src/detect/judge.ts` sends the pair to Claude Haiku 5.5 with a JSON-schema output format. The label is one of seven; `correction`, `rejection` and `failure_report` count as pushback, while `instruction`, `question`, `affirmation` and `other` do not. Thinking is off and effort is low.
 5. **Trigger.** `src/trigger/accumulator.ts` replays every verdict in the session through a sliding window counted in developer turns. The default policy `k2w6` fires on 2 pushbacks within 6 turns, then waits 3 turns before it can fire again. `REFLECT_POLICY` picks another: `each`, `k2w4`, `k2w8`, `k3w8` or `k2w6-med` (which ignores low-confidence verdicts).
-6. **Reflection.** `src/reflect/reflection.ts` sends exactly the turns that tripped the trigger to Claude Opus 5.5. Each turn carries a summary of what the agent had just done, the developer's words and the span the judge quoted as evidence. The call uses adaptive thinking at effort `high`, and the server-side fallback beta, so a refusal is retried on a fallback model inside the same request. The output schema (`src/reflect/schema.ts`) has `pattern`, `signal`, `adjustment`, `confidence`, `scope`, `false_trigger_likelihood`, `counter_hypothesis`, `verify` and `expires_after_turns` (3 to 12).
+6. **Reflection.** `src/reflect/reflection.ts` sends exactly the turns that tripped the trigger to Claude Opus 5.5. Each turn carries a summary of what the agent had just done, the developer's words and the span the judge quoted as evidence. The call uses adaptive thinking at effort `high`, and the server-side fallback beta, so a refusal is retried on a fallback model inside the same request. It runs in a separate process (`reflect-worker`) that the judge hook starts detached: `claude -p` ends the hook's process as soon as the agent answers, which in a short turn comes before the reflection does (a live test on 2026-11-16 lost its first note this way). If the worker cannot start, the judge hook runs the reflection itself. The output schema (`src/reflect/schema.ts`) has `pattern`, `signal`, `adjustment`, `confidence`, `scope`, `false_trigger_likelihood`, `counter_hypothesis`, `verify` and `expires_after_turns` (3 to 12).
 7. **Delivery.** `src/reflect/format.ts` turns the reflection into at most 2,400 characters of `additionalContext`. The next `tool` or `prompt` hook hands it to the agent and records a `delivered` event, so it arrives once. A copy goes to `.reflect/session-guidance.md` for the developer.
 
 `reflect manual` and the `/reflect:brain-reflect` command do not wait for the trigger. They send the last N judged turns (default 6, at most 12) to the reflection model and tell it some of them may not be pushback. They do not check the spend cap.
@@ -65,13 +65,13 @@ The benchmark tested this with a control that could have refuted it. With the ag
 
 ### Gate, then judge
 
-The judge costs money on every message, so a free check runs first. Stage A reads no words, which is why it works in any language. Only its hard rule is used in the hook: no prior agent turn means there is nothing to push back on. With that gate (θ 0) in front of a Claude Haiku 4.5 judge, the August benchmark measured 87.9% precision, 49.6% recall and 76.1% F0.5 per turn. The gate's softer scores, which would skip more calls, are computed but not used; the threshold that would apply them was chosen in-sample, and raising it lowered recall.
+The judge costs money on every message, so a free check runs first. Stage A reads no words, which is why it works in any language. Only its hard rule is used in the hook: no prior agent turn means there is nothing to push back on. With that gate (θ 0) in front of the judge, the benchmark measured 97.4% precision, 53.9% recall and 83.9% F0.5 per turn with Claude Haiku 5.5, against 87.0%, 47.5% and 74.6% for the Claude Haiku 4.5 judge of August. The gate's softer scores, which would skip more calls, are computed but not used; the threshold that would apply them was chosen in-sample, and raising it lowered recall.
 
 On turns that follow code edits, the gate removes almost nothing (`bench/FINDINGS.md` §6). Its savings come from session openers and non-coding work.
 
 ### Wait for two pushbacks
 
-A single correction is already in the agent's context, word for word, so a reflection on it adds little. Two inside a short window suggest something the agent is not seeing across turns, which is what an outside reader can name. Replaying the policies over the August sessions with the Haiku 4.5 verdicts (`bench/results/session-sim-prod.md`), `k2w6` fired 20 times; 17 of those fires (85.0%) were made of turns the reference labels also call pushback. It fired in 16 sessions, with session precision 93.8% and session recall 57.7%. That table was computed on the same data the default was chosen on.
+A single correction is already in the agent's context, word for word, so a reflection on it adds little. Two inside a short window suggest something the agent is not seeing across turns, which is what an outside reader can name. Replaying the policies over the August sessions with the Haiku 5.5 verdicts (`bench/results/session-sim-h55.md`), `k2w6` fired 21 times, every time on turns the reference labels also call pushback, in 17 sessions: session precision 100% and session recall 65.4%. With the Haiku 4.5 verdicts it fired 20 times, 17 of them supported, with session precision 93.8% and recall 57.7%. Both tables were computed on the same data the default was chosen on.
 
 The 0.1 trigger summed weighted signals into an integer that never decayed and fired at 240. It fired zero times over 109 sessions in July (`evals/FINDINGS.md`).
 
@@ -89,7 +89,7 @@ The note goes in through `additionalContext` on the first `tool` or `prompt` hoo
 
 State lives in `.reflect/sessions/<session_id>/events.jsonl`, one JSON line per event: `prompt`, `verdict`, `skip`, `fire`, `guidance`, `delivered` and `error`. Status, spend and pending guidance are all derived by reading the log back (`src/hook/state.ts`). 0.1 kept one JSON object per project and rewrote it from two hooks with `grep` and `sed`. PostToolUse fires once per parallel tool call, so those writers lost updates.
 
-The one step that reads, decides and writes is the trigger. It runs under an exclusive-create lock file (`fire.lock`, treated as stale after 120 s), so two judges finishing together cannot both fire on the same pattern. The reflection call itself runs outside the lock.
+The one step that reads, decides and writes is the trigger. It runs under an exclusive-create lock file (`fire.lock`, treated as stale after 120 s), so two judges finishing together cannot both fire on the same pattern. The reflection runs outside the lock, in the worker, and a claim file (`reflecting-<id>`) makes sure one fire gets one reflection.
 
 `.reflect/` gets its own `.gitignore` containing `*` on first write. `reflect off` writes `.reflect/disabled`.
 
@@ -107,9 +107,9 @@ Each `verdict` and `guidance` event records its cost from `src/pricing.ts`; a mo
 
 ## Known limits
 
-The measured numbers come from `bench/FINDINGS.md` (August 2026). §11 of that document lists its limits; these are the ones that matter for reading this page.
+The measured numbers come from `bench/FINDINGS.md` (August 2026, with the judge rerun on Haiku 5.5 in November). §11 of that document lists its limits; these are the ones that matter for reading this page.
 
-- **Measured with a different judge.** The benchmark ran Claude Haiku 4.5, and 0.2 ships Claude Haiku 5.5. A rerun with Haiku 5.5 is pending.
+- **Few sessions.** The default trigger's replay rests on 21 fires and 26 target sessions. The 95% interval for 21 supported fires out of 21 runs from 85% to 100%.
 - **The reference is a gold proxy.** Claude Opus 5 labelled the 837 turns. No human has checked them, so "precision" means agreement with Opus 5.
 - **One developer, one language pair.** The corpus is 224 sessions from one person writing in Korean and English. The precision and recall figures may not transfer.
 - **Duplicates.** The 837 rows hold 685 distinct prompts (the largest group is 30 identical automated health checks), so the effective sample is smaller than 837.

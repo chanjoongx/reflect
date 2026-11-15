@@ -808,6 +808,85 @@ P("");
   P("");
 }
 
+// ─── 12. The 2026-11 judge runs ───────────────────────────────────────
+//
+// 0.2 ships Claude Haiku 5.5 with the same rubric (same fingerprint) as
+// `prod`; only the model and its thinking mode change. Each run is scored on
+// the evaluation-set pairs it labelled, behind the gate the hook uses (θ = 0:
+// skip turns with no prior agent turn), and `prod` is rescored on exactly
+// those pairs so the two rows compare like for like.
+
+const JUDGE_2026: Record<string, string> = { h55: "off", h55t: "adaptive" };
+const judge2026: Record<string, unknown> = {};
+for (const [runId, thinking] of Object.entries(JUDGE_2026)) {
+  const m = byRun.get(runId);
+  if (!m || m.size === 0) continue;
+  if (Object.keys(judge2026).length === 0) {
+    P("## 12. The 2026-11 judge runs");
+    P("");
+    P(
+      "0.2 ships Claude Haiku 5.5. These runs use the same rubric as `prod`; only the model and its thinking mode differ. Each row is scored on the evaluation-set pairs that run labelled, behind the gate the hook uses (θ = 0: skip turns with no prior agent turn), against the same reference labels. The `prod` columns rescore Haiku 4.5 on the same pairs.",
+    );
+    P("");
+    P("| run | thinking | pairs | precision | recall | F1 | F0.5 | prod F0.5, same pairs | Δ F0.5 (95% CI, by session) | agrees with reference, 7 labels | per call | mean latency |");
+    P("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  }
+  const idx = evalRows.flatMap((r, i) => (m.has(r.pairId) ? [i] : []));
+  const rowsOf = idx.map((i) => evalRows[i] as Row);
+  const verdicts = rowsOf.map((r) => m.get(r.pairId) as LabelRow);
+  const t = idx.map((i) => truth[i] as boolean);
+  const pred = rowsOf.map((r, k) => r.gate.pass && isPushback((verdicts[k] as LabelRow).verdict.label));
+  const prodPred = rowsOf.map((r, k) => r.gate.pass && isPushback(prodLabels[idx[k] as number] as Label));
+  const c = confusion(pred, t);
+  const cp = confusion(prodPred, t);
+  const d = pairedDeltaCI(pred, prodPred, t, (x) => fbeta(x, 0.5), {
+    iters: 2000,
+    groups: rowsOf.map((r) => r.sessionId),
+  });
+  const agree = idx.filter((i, k) => (verdicts[k] as LabelRow).verdict.label === refLabels[i]).length / idx.length;
+  let usd = 0;
+  let ms = 0;
+  let tokIn = 0;
+  let tokOut = 0;
+  for (const v of verdicts) {
+    usd += costUSD(v.model, {
+      inputTokens: v.inputTokens,
+      outputTokens: v.outputTokens,
+      cacheReadTokens: v.cacheReadTokens,
+      cacheCreation1hTokens: v.cacheCreationTokens,
+    });
+    ms += v.latencyMs;
+    tokIn += v.inputTokens + v.cacheReadTokens + v.cacheCreationTokens;
+    tokOut += v.outputTokens;
+  }
+  const n = verdicts.length;
+  const sign = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)}`;
+  P(
+    `| ${runId} | ${thinking} | ${n} | ${pct(precision(c))} | ${pct(recall(c))} | ${pct(f1(c))} | ${pct(fbeta(c, 0.5))} | ${pct(fbeta(cp, 0.5))} | ${sign(d.point)} (${sign(d.lo)} to ${sign(d.hi)}) | ${pct(agree)} | $${(usd / n).toFixed(5)} | ${Math.round(ms / n)} ms |`,
+  );
+  judge2026[runId] = {
+    model: verdicts[0]?.model,
+    thinking,
+    pairs: n,
+    precision: precision(c),
+    recall: recall(c),
+    f1: f1(c),
+    f05: fbeta(c, 0.5),
+    prodSamePairs: { precision: precision(cp), recall: recall(cp), f05: fbeta(cp, 0.5) },
+    deltaF05VsProd: d,
+    agreesWithReference: agree,
+    perCallUSD: usd / n,
+    meanInputTokens: tokIn / n,
+    meanOutputTokens: tokOut / n,
+    meanLatencyMs: ms / n,
+  };
+}
+if (Object.keys(judge2026).length > 0) {
+  P("");
+  P("Token counts and cost come from the API's usage fields on each call. Session-level behaviour for these runs: `npm run bench:sim -- --run h55`.");
+  P("");
+}
+
 // ─── Emit ─────────────────────────────────────────────────────────────
 
 mkdirSync(OUT, { recursive: true });
@@ -815,6 +894,7 @@ mkdirSync(OUT, { recursive: true });
 const curve = prCurve(gateScores, truth);
 const machine = {
   generatedAt: new Date().toISOString(),
+  judge2026,
   corpus: {
     pairsExtracted: rows.length,
     evaluated: evalRows.length,

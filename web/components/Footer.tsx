@@ -9,7 +9,7 @@ export function Footer() {
     >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <p className="font-mono text-[12px] leading-relaxed">
-          reflect v1 <span className="text-white/20">·</span> MIT{" "}
+          reflect 0.2 <span className="text-white/20">·</span> MIT{" "}
           <span className="text-white/20">·</span> localhost-only viewer
         </p>
 
@@ -43,7 +43,7 @@ export function Footer() {
               aria-hidden
               className="h-1 w-1 rounded-full bg-[var(--color-brand-purple)]"
             />
-            Built with Opus 4.7
+            started at Built with Opus 4.7, 2026-04
           </span>
         </div>
       </div>

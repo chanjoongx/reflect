@@ -39,7 +39,7 @@ export function ClusterDetails({ count, children, className }: ClusterDetailsPro
       >
         <span className="inline-flex items-center gap-1.5">
           <span>
-            {open ? "Hide" : "Show"} {count} reflection{count === 1 ? "" : "s"}
+            {open ? "Hide" : "Show"} {count} note{count === 1 ? "" : "s"}
           </span>
         </span>
         <ChevronDown

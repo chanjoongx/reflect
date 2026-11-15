@@ -1,22 +1,30 @@
-import { loadSnapshot } from "@/lib/safe-read";
+import { loadSnapshot, pickSession } from "@/lib/safe-read";
+import { DEFAULT_POLICY_ID, policyById } from "@/lib/session";
+import type { TriggerPolicy } from "@/lib/types";
 import { SessionState } from "@/components/SessionState";
-import { CumMeter } from "@/components/CumMeter";
+import { SessionPicker } from "@/components/SessionPicker";
+import { WindowMeter } from "@/components/WindowMeter";
 import { CooldownPill } from "@/components/CooldownPill";
-import { CallTimeline } from "@/components/CallTimeline";
+import { TurnTimeline } from "@/components/TurnTimeline";
+import { SessionFeed } from "@/components/SessionFeed";
 import { ActiveGuidanceCard } from "@/components/ActiveGuidanceCard";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const snap = await loadSnapshot();
-  const cum = snap.state?.cum_x100 ?? 0;
-  const cooldown = snap.state?.cooldown_remaining ?? 0;
+  const session = pickSession(snap, (await searchParams).session);
   const isFixture = snap.source === "fixture";
+  const policy: TriggerPolicy = session?.window.policy ?? (policyById(DEFAULT_POLICY_ID) as TriggerPolicy);
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12 space-y-12">
-      <section className="flex min-h-[280px] flex-col justify-end gap-5 pt-8 pb-4">
-        <div className="flex items-center gap-2.5">
+    <div className="mx-auto max-w-6xl space-y-12 px-6 py-12">
+      <section className="flex min-h-[280px] flex-col justify-end gap-5 pb-4 pt-8">
+        <div className="flex flex-wrap items-center gap-2.5">
           <span className="relative inline-flex h-2 w-2" aria-hidden>
             <span
               className={
@@ -34,48 +42,88 @@ export default async function DashboardPage() {
             />
           </span>
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
-            {isFixture ? "example data · fixture" : "watching localhost session"}
+            {isFixture ? "example data · fixture" : "reading local sessions"}
           </span>
-          <span aria-hidden className="text-white/20">·</span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">
-            {snap.source_label}
+          <span aria-hidden className="text-white/20">
+            ·
           </span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/40">{snap.source_label}</span>
+          {snap.disabled ? (
+            <span className="rounded-full border border-[rgba(239,116,116,0.3)] bg-[rgba(239,116,116,0.1)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#ef7474]">
+              reflect is off for this project
+            </span>
+          ) : null}
         </div>
-        <h1 className="text-5xl font-semibold tracking-tight text-white/95 sm:text-6xl">
-          reflect
-        </h1>
+        <h1 className="text-5xl font-semibold tracking-tight text-white/95 sm:text-6xl">reflect</h1>
         <p className="max-w-2xl text-lg leading-relaxed text-white/60">
-          session-local metacognition for Claude Code
+          Notices when you keep pushing back on Claude Code, works out why, and tells the agent before its next
+          step.
         </p>
+        {isFixture ? (
+          <p className="max-w-2xl text-[13px] leading-relaxed text-white/45">
+            No sessions found in the project&apos;s <code className="font-mono text-[12px]">.reflect/sessions/</code>
+            , so this is example data. Set <code className="font-mono text-[12px]">REFLECT_PROJECT_DIR</code> to
+            the project you use reflect in.
+            {snap.legacyFiles
+              ? " That folder holds files from reflect 0.1 (state.json, session-log.jsonl), which this Viewer no longer reads."
+              : ""}
+          </p>
+        ) : null}
       </section>
 
-      <section aria-label="Live session" className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr_auto] lg:items-stretch">
-        <SessionState state={snap.state} />
+      <SessionPicker sessions={snap.sessions} activeId={session?.id ?? null} />
+
+      <section
+        aria-label="Session"
+        className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr_auto] lg:items-stretch"
+      >
+        <SessionState session={session} />
         <div className="rounded-xl border border-white/5 bg-[#0F0F14] p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
           <div className="flex h-full flex-col justify-between gap-4">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[10px] uppercase tracking-[0.14em] text-white/40">
-                reflection meter
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-wider text-white/30">
-                threshold 240
+              <span className="text-[10px] uppercase tracking-[0.14em] text-white/40">trigger window</span>
+              <span
+                className="font-mono text-[10px] uppercase tracking-wider text-white/30"
+                title={session ? `policy from ${session.window.policySource}` : undefined}
+              >
+                {policy.id}
               </span>
             </div>
-            <CumMeter cumX100={cum} />
+            {session ? (
+              <WindowMeter window={session.window} />
+            ) : (
+              <p className="font-mono text-[11px] text-white/40">no session</p>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-center rounded-xl border border-white/5 bg-[#0F0F14] px-6 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] lg:min-w-[180px]">
-          <CooldownPill remaining={cooldown} />
+          <CooldownPill remaining={session?.window.cooldownLeft ?? 0} />
         </div>
       </section>
 
-      <section aria-label="Active guidance">
-        <ActiveGuidanceCard guidance={snap.active_guidance} />
+      {session && (session.truncated || session.badLines > 0) ? (
+        <p className="font-mono text-[11px] text-[var(--color-brand-orange)]">
+          {session.truncated ? "This log is over 4 MB; only its most recent part was read, so turn numbers start late. " : ""}
+          {session.badLines > 0
+            ? `${session.badLines} line${session.badLines === 1 ? " was" : "s were"} not a known event and ${session.badLines === 1 ? "was" : "were"} skipped.`
+            : ""}
+        </p>
+      ) : null}
+
+      <section aria-label="Current note">
+        <ActiveGuidanceCard note={session?.current ?? null} policy={policy} />
       </section>
 
-      <section aria-label="Tool call timeline">
-        <CallTimeline calls={snap.recent_calls} cumX100={cum} />
-      </section>
+      {session ? (
+        <>
+          <section aria-label="Developer turns">
+            <TurnTimeline turns={session.turns} fires={session.fires} notes={session.notes} />
+          </section>
+          <section aria-label="Session log">
+            <SessionFeed feed={session.feed} />
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

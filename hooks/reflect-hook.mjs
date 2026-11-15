@@ -22,6 +22,7 @@ import {
 import "./lib/chunk-K3FNCRLY.mjs";
 
 // src/hook/run.ts
+import { spawn } from "node:child_process";
 import { existsSync as existsSync2, openSync as openSync2, readSync, closeSync as closeSync2, fstatSync, writeFileSync as writeFileSync2, readFileSync as readFileSync2 } from "node:fs";
 import { join as join3 } from "node:path";
 
@@ -724,6 +725,7 @@ async function withLock(projectDir2, sessionId, fn, waitMs = 15e3) {
 
 // src/hook/run.ts
 var HOOK_MODES = ["session-start", "prompt", "judge", "tool"];
+var WORKER_MODE = "reflect-worker";
 var EVENT_NAME = {
   "session-start": "SessionStart",
   prompt: "UserPromptSubmit",
@@ -734,8 +736,27 @@ var defaultDeps = (env = process.env) => ({
   env,
   judge: async (pair, opts) => (await import("./lib/judge-D3JS75YH.mjs")).judgePair(pair, opts),
   reflect: async (turns, window, opts) => (await import("./lib/reflection-HJHUZMJ6.mjs")).callReflection(turns, window, opts),
-  readTranscript: readTail
+  readTranscript: readTail,
+  detach: spawnWorker
 });
+function spawnWorker(projectDir2, sessionId, firePromptId) {
+  const script = process.argv[1];
+  if (!script || !existsSync2(script)) return false;
+  try {
+    const child = spawn(process.execPath, [script, WORKER_MODE, projectDir2, sessionId, firePromptId], {
+      cwd: projectDir2,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true
+    });
+    child.on("error", () => {
+    });
+    child.unref();
+    return child.pid !== void 0;
+  } catch {
+    return false;
+  }
+}
 function isAuthFailure(e) {
   const status = e?.status;
   return status === 401 || status === 403;
@@ -905,9 +926,9 @@ async function runHook(mode, input, projectDir2, deps) {
   }
   return null;
 }
-function claimDelivery(projectDir2, sessionId, id) {
+function claimOnce(projectDir2, sessionId, name) {
   try {
-    closeSync2(openSync2(join3(sessionDir(projectDir2, sessionId), `delivered-${id}`), "wx"));
+    closeSync2(openSync2(join3(sessionDir(projectDir2, sessionId), name.replace(/[^A-Za-z0-9_.-]/g, "_")), "wx"));
     return true;
   } catch {
     return false;
@@ -917,7 +938,7 @@ function deliver(mode, projectDir2, sessionId) {
   const events = readEvents(projectDir2, sessionId);
   const g = pendingGuidance(events);
   if (!g) return null;
-  if (!claimDelivery(projectDir2, sessionId, g.id)) return null;
+  if (!claimOnce(projectDir2, sessionId, `delivered-${g.id}`)) return null;
   appendEvent(projectDir2, sessionId, {
     t: "delivered",
     at: now(),
@@ -992,35 +1013,46 @@ async function judgeTurn(input, projectDir2, sessionId, deps) {
   if (!isPushback(result.verdict.label)) return;
   const fired = await withLock(projectDir2, sessionId, async () => {
     const events = readEvents(projectDir2, sessionId);
-    const order2 = promptOrder(events, promptId);
-    const verdicts2 = /* @__PURE__ */ new Map();
-    for (const e of events) if (e.t === "verdict") verdicts2.set(e.promptId, e);
+    const order = promptOrder(events, promptId);
+    const verdicts = /* @__PURE__ */ new Map();
+    for (const e of events) if (e.t === "verdict") verdicts.set(e.promptId, e);
     const recorded = events.filter((e) => e.t === "fire");
     const alreadyFired = new Set(recorded.map((e) => e.promptId));
     const spent = new Set(recorded.flatMap((e) => e.evidence));
     const acc = new Accumulator(cfg.policy);
-    let hit2 = null;
-    for (const pid of order2) {
-      const v = verdicts2.get(pid);
+    let hit = null;
+    for (const pid of order) {
+      const v = verdicts.get(pid);
       const sig = v && isPushback(v.label) ? { label: v.label, confidence: v.confidence } : null;
       const fire = acc.observe(pid, sig);
       if (fire && !alreadyFired.has(pid) && fire.evidence.includes(promptId) && !fire.evidence.some((id) => spent.has(id))) {
-        hit2 = { promptId: pid, evidence: fire.evidence };
+        hit = { promptId: pid, evidence: fire.evidence };
       }
     }
-    if (!hit2) return null;
+    if (!hit) return null;
     appendEvent(projectDir2, sessionId, {
       t: "fire",
       at: now(),
-      promptId: hit2.promptId,
-      evidence: hit2.evidence,
+      promptId: hit.promptId,
+      evidence: hit.evidence,
       policyId: cfg.policy.id
     });
-    return { hit: hit2, events, order: order2, verdicts: verdicts2 };
+    return hit;
   });
   if (!fired) return;
-  const { hit, order, verdicts } = fired;
-  const turns = hit.evidence.map((pid) => {
+  if (deps.detach?.(projectDir2, sessionId, fired.promptId)) return;
+  await reflectForFire(projectDir2, sessionId, fired.promptId, deps);
+}
+async function reflectForFire(projectDir2, sessionId, firePromptId, deps) {
+  const cfg = loadConfig(deps.env);
+  const events = readEvents(projectDir2, sessionId);
+  const fire = events.find((e) => e.t === "fire" && e.promptId === firePromptId);
+  if (!fire) return;
+  if (!claimOnce(projectDir2, sessionId, `reflecting-${firePromptId}`)) return;
+  const order = promptOrder(events);
+  const verdicts = /* @__PURE__ */ new Map();
+  for (const e of events) if (e.t === "verdict") verdicts.set(e.promptId, e);
+  const turns = fire.evidence.map((pid) => {
     const v = verdicts.get(pid);
     if (!v) return null;
     return {
@@ -1032,11 +1064,11 @@ async function judgeTurn(input, projectDir2, sessionId, deps) {
       evidence: v.evidence
     };
   }).filter((t) => t !== null);
-  if (sessionSpend(readEvents(projectDir2, sessionId)) >= cfg.maxUsdPerSession) {
-    appendEvent(projectDir2, sessionId, { t: "skip", at: now(), promptId: hit.promptId, reason: "budget" });
+  if (sessionSpend(events) >= cfg.maxUsdPerSession) {
+    appendEvent(projectDir2, sessionId, { t: "skip", at: now(), promptId: firePromptId, reason: "budget" });
     return;
   }
-  await reflectAndRecord(turns, cfg, projectDir2, sessionId, hit.promptId, deps, false);
+  await reflectAndRecord(turns, cfg, projectDir2, sessionId, firePromptId, deps, false);
 }
 async function reflectAndRecord(turns, cfg, projectDir2, sessionId, promptId, deps, manual) {
   let res;
@@ -1094,6 +1126,9 @@ function projectDirOf(input, env) {
   if (fromEnv && existsSync2(fromEnv)) return fromEnv;
   return input.cwd && existsSync2(input.cwd) ? input.cwd : process.cwd();
 }
+
+// src/hook/main.ts
+import { existsSync as existsSync4 } from "node:fs";
 
 // src/cli/cli.ts
 import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
@@ -1345,16 +1380,37 @@ async function main(argv2) {
     if (out) await writeOut(out + "\n");
     return 0;
   }
+  if (mode === WORKER_MODE) {
+    const [, projectDir2, sessionId, firePromptId] = argv2;
+    if (!projectDir2 || !sessionId || !firePromptId || !existsSync4(projectDir2)) return 0;
+    const env = withProjectEnv(projectDir2, process.env);
+    if (isDisabled(projectDir2, env)) return 0;
+    try {
+      await reflectForFire(projectDir2, sessionId, firePromptId, defaultDeps(env));
+    } catch (e) {
+      try {
+        appendEvent(projectDir2, sessionId, {
+          t: "error",
+          at: now(),
+          where: "reflection",
+          message: safeTruncate(redactString(e instanceof Error ? e.message : String(e)), 400)
+        });
+      } catch {
+      }
+    }
+    return 0;
+  }
   return runCli(argv2);
 }
 
 // src/entry.ts
 var argv = process.argv.slice(2);
-var hookMode = HOOK_MODES.includes(argv[0] ?? "");
-main(argv).then(
-  (code) => process.exit(code),
-  (e) => {
-    if (!hookMode) console.error(`reflect: ${e instanceof Error ? e.message : String(e)}`);
-    process.exit(hookMode ? 0 : 1);
-  }
-);
+var quiet = [...HOOK_MODES, WORKER_MODE].includes(argv[0]);
+function finish(code) {
+  process.exitCode = code;
+  setTimeout(() => process.exit(code), 5e3).unref();
+}
+main(argv).then(finish, (e) => {
+  if (!quiet) console.error(`reflect: ${e instanceof Error ? e.message : String(e)}`);
+  finish(quiet ? 0 : 1);
+});

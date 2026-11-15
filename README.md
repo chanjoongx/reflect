@@ -52,21 +52,27 @@ Everything reflect keeps is in `.reflect/` in your project, which ignores itself
 
 ## How well it works
 
-Measured in August 2026 on 837 turns from 224 of my own Claude Code sessions, scored against labels from Claude Opus 5:
+The benchmark is 837 turns from 224 of my own Claude Code sessions, collected in August 2026 and labelled by Claude Opus 5. 141 of the turns are pushback. In November I reran the judge on the same turns with the model 0.2 ships, Claude Haiku 5.5. Both judges skip turns that have no agent turn before them.
 
-| detector | pushback turns found | precision | recall |
-|---|---:|---:|---:|
-| 0.1.4 as shipped (git reverts + English phrases) | 0 of 141 | n/a | 0.0% |
-| 0.2 (skip turns with no prior agent turn, then the judge) | about half | 87.9% | 49.6% |
+| detector | pushback found (of 141) | false alarms | precision | recall |
+|---|---:|---:|---:|---:|
+| 0.1.4 as shipped (git reverts + English phrases) | 0 | 0 | n/a | 0.0% |
+| judge on Claude Haiku 4.5 (August) | 67 | 10 | 87.0% | 47.5% |
+| **0.2: judge on Claude Haiku 5.5** | **76** | **2** | **97.4%** | **53.9%** |
 
-At the level that matters to you, whether a session gets a note at all, the default trigger (two pushbacks in six turns) fired in 16 sessions. In 15 of them the reference labels agree there was such a cluster. Of the 26 sessions where the labels show one, it caught 15. The replay that produces these numbers is `npm run bench:sim`, and it makes no API calls.
+On the same turns Haiku 5.5 scores 9.3 F0.5 points above Haiku 4.5 (95% interval 2.5 to 18.5, resampled by session). Turning on adaptive thinking did not help (93.6% precision, 51.8% recall), so it stays off.
 
-The prior turn is what makes this work. With the agent's previous turn hidden, the same judge loses 10.3 F1 points (clustered bootstrap interval 1.2 to 19.8; 6.8 points once the turns where the judge declined to answer are left out). Given the prior turn of a different pair instead, it loses 27.6.
+What matters in use is whether a session gets a note at all. Replayed over the benchmark, the default trigger (two pushbacks within six turns) fired 21 times in 17 sessions, and every fire landed on turns the reference labels call pushback. Of the 26 sessions where the reference labels trip the same trigger, it reached 17. With the Haiku 4.5 judge it was 17 good fires of 20, in 15 of the 26 sessions. `npm run bench:sim -- --run h55` repeats the replay without API calls.
 
-Things these numbers do not tell you yet:
+The agent's previous turn is what makes this work. In the August runs, hiding it cost the Haiku 4.5 judge 10.3 F1 points (clustered bootstrap interval 1.2 to 19.8; 6.8 once the turns where the judge declined to answer are left out). Showing it the previous turn of a different pair cost 27.6.
 
-- The labels come from a model. No human has checked them. Review sheets for that are in `bench/`.
-- They were measured with a Haiku 4.5 judge. 0.2 ships Haiku 5.5; the rerun is pending.
+I also ran the plugin end to end in a real `claude -p` session on 2026-11-16. Two corrections in a row fired the trigger, Opus 5.5 wrote the note in 10.3 seconds for $0.020, and the agent's next turn did the check the note asked for.
+
+What these numbers do not tell you:
+
+- The labels come from a model, and no human has checked them yet. Review sheets for that are in `bench/`.
+- The rubric and the trigger were chosen on this same corpus. There is no held-out set.
+- 21 good fires out of 21 is a small sample: the 95% interval for that rate runs from 85% to 100%.
 - It is one developer's corpus, and only 286 of the 837 turns follow an edit to code. The rest is writing and research done in Claude Code.
 - Recall is the weak side. The judge tends to read a correction as a new instruction, so about half of real pushback goes unnoticed. That is the safer way to be wrong for a tool that interrupts a working agent, but it is a real limit.
 
@@ -94,12 +100,12 @@ reflect doctor   # checks node, the key and the wiring
 
 ## Cost
 
-These are estimates. The judge's token counts come from the August runs, raised by about 30% for Haiku 5.5's newer tokenizer and priced at Haiku 5.5 rates. The reflection has not yet been measured on Opus 5.5. [`docs/cost.md`](docs/cost.md) has the arithmetic.
-
-| call | when | estimate |
+| call | when | measured |
 |---|---|---|
-| judge, Claude Haiku 5.5 | each message after the agent's first reply (about 3,900 Haiku 4.5 tokens in, 90 out) | $0.0003 to $0.0009 |
-| reflection, Claude Opus 5.5 | only when two pushbacks land within six messages | at most about $0.20 |
+| judge, Claude Haiku 5.5 | each message after the agent's first reply | $0.00023 per call on average (4,806 tokens in, 98 out, 1.4 s), over the 837 benchmark turns |
+| reflection, Claude Opus 5.5 | only when two pushbacks land within six messages | $0.020 and $0.029 in two live runs, about 10 s each |
+
+A 200-message session with three notes would cost about $0.05 for the judge and under $0.10 for the notes. Two reflections are not much of a sample, and a reflection that reads longer turns costs more. [`docs/cost.md`](docs/cost.md) has the details.
 
 reflect stops calling the API in a session once it has spent $0.50 there. Change that with the plugin setting or `REFLECT_MAX_USD_PER_SESSION`.
 

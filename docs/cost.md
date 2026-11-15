@@ -1,6 +1,6 @@
 # What reflect costs
 
-reflect makes two kinds of API call, both billed to your Anthropic key. A judge call runs on most of your messages. A reflection runs only when pushback clusters. Every figure below is an estimate: the judge's token counts come from the August 2026 benchmark, which ran Claude Haiku 4.5, and no reflection has yet been measured on Claude Opus 5.5.
+reflect makes two kinds of API call, both billed to your Anthropic key. A judge call runs on most of your messages. A reflection runs only when pushback clusters. The judge figures below were measured on 2026-11-16 over the 837 benchmark turns with Claude Haiku 5.5. The reflection has two live measurements on Claude Opus 5.5 so far.
 
 Your actual spend is logged. Each `verdict` and `guidance` event in `.reflect/sessions/<id>/events.jsonl` records its cost, `reflect status` shows the session total against the cap, and every note in `.reflect/session-guidance.md` ends with the model and cost of the call that wrote it.
 
@@ -17,30 +17,37 @@ Haiku 5.5's rate rises to $0.50 / $2.50 for prompts over 100K tokens. A judge pr
 
 ## The judge
 
-In the August benchmark's `prod` run, Claude Haiku 4.5 judged 837 developer turns. A call averaged about 3,900 input tokens and 90 output tokens, and the run cost $3.63 at Haiku 4.5's prices ($1 / $5). Haiku 5.5 is ten times cheaper on both input and output, so the same tokens cost about $0.36, or $0.00044 per call.
+The November rerun sent all 837 benchmark turns to Claude Haiku 5.5. A call averaged 4,806 input tokens and 98 output tokens and took 1.4 seconds. Of the input, 3,287 tokens are the system prompt, which is sent with a one-hour cache marker and was read from cache on every call of that run. The other 1,519 are the developer's message and the summary of the agent's previous turn.
 
-That figure assumes nothing is cached. The judge's system prompt is about 2,200 tokens and is sent with a one-hour cache marker. It cleared no cache on Haiku 4.5, whose minimum cacheable prefix is 4,096 tokens (`bench/FINDINGS.md` §10). Haiku 5.5's floor is 512 tokens (`src/models.ts`), so the prompt should be cached there:
-
-| judge call | arithmetic | estimate |
+| judge call | arithmetic, per million tokens | cost |
 |---|---|---:|
-| nothing cached | 3,900 × $0.10 + 90 × $0.50, per million | $0.00044 |
-| system prompt read from cache | 2,200 × $0.01 + 1,700 × $0.10 + 90 × $0.50 | $0.00024 |
-| first call in an hour (writes the cache) | 2,200 × $0.20 + 1,700 × $0.10 + 90 × $0.50 | $0.00066 |
+| system prompt read from cache (the usual case) | 3,287 × $0.01 + 1,519 × $0.10 + 98 × $0.50 | $0.00023 |
+| first call in an hour (writes the cache) | 3,287 × $0.20 + 1,519 × $0.10 + 98 × $0.50 | $0.00086 |
+| nothing cached | 4,806 × $0.10 + 98 × $0.50 | $0.00053 |
 
-Token counts are Haiku 4.5's. Anthropic's model notes say Haiku 5.5's newer tokenizer counts the same text as about 30% more tokens, which raises each row by about that much: $0.00031 to $0.00086 per call. Its caching has not been checked against real usage fields yet.
+The benchmark run averaged $0.000234 per call. In a session the cache is written once and then read on every message within the hour, so the usual case dominates.
 
-Not every message is judged. With the gate's one hard rule (no agent turn before the message, no call), the August corpus needed 68 judge calls per 100 messages. On turns that follow code edits the gate skips almost nothing (`bench/FINDINGS.md` §6), so for coding sessions expect a judge call on nearly every message. With the tokenizer adjustment, that puts the judge at roughly $0.02 to $0.06 per 100 messages.
+Not every message is judged. With the gate's one hard rule (no agent turn before the message, no call), the August corpus needed 68 judge calls per 100 messages. On turns that follow code edits the gate skips almost nothing (`bench/FINDINGS.md` §6), so for coding sessions expect a judge call on nearly every message: about $0.02 to $0.03 per 100 messages.
+
+For comparison, the August `prod` run on Claude Haiku 4.5 cost $3.63 for the same 837 turns, $0.0043 per call. Its prompt was below Haiku 4.5's 4,096-token caching minimum, so nothing was cached.
 
 ## The reflection
 
-The reflection has not been measured on Opus 5.5. Its cost depends mostly on how long the model thinks, which the code does not fix. What the code does fix is a ceiling:
+Two reflections were measured on Claude Opus 5.5 on 2026-11-16, both on a short scratch session:
+
+| run | turns read | time | cost |
+|---|---:|---:|---:|
+| automatic, after a `k2w6` fire | 2 | 10.3 s | $0.0197 |
+| `reflect manual` | 4 | 10.0 s | $0.0286 |
+
+Its cost depends mostly on how long the model thinks, which the code does not fix, and on how long the turns it reads are. The code does fix a ceiling:
 
 - **Input.** The system prompt is 2,444 characters. Each turn adds at most 1,500 characters of agent summary, 1,500 of developer message and 240 of evidence, plus a few headings, so about 3,400 characters per turn. A `k2w6` fire sends two turns, about 9,400 characters in all. Counting one token per character, a deliberately pessimistic rate, that is 9,400 tokens, or $0.038.
 - **Output.** `max_tokens` is 8,000, thinking included. At $20 per million that is at most $0.16.
 
-So one automatic reflection costs at most about $0.20, and usually less. A manual reflection reads more turns (6 by default, up to 12), which raises the input ceiling to about $0.09 for 6 turns and $0.17 for 12.
+So one automatic reflection costs at most about $0.20, and the two measured ones cost $0.02 to $0.03. A manual reflection reads more turns (6 by default, up to 12), which raises the input ceiling to about $0.09 for 6 turns and $0.17 for 12.
 
-How often it runs: replaying the default policy over the August sessions with the Haiku 4.5 verdicts gave 20 fires in 837 developer turns (`bench/results/session-sim-prod.md`), about 2.4 per 100 messages. At the ceiling that is under $0.50 per 100 messages; the typical figure will be lower and is not yet known.
+How often it runs: replaying the default policy over the August sessions with the Haiku 5.5 verdicts gave 21 fires in 837 developer turns (`bench/results/session-sim-h55.md`), about 2.5 per 100 messages. At the measured cost that is about $0.06 per 100 messages; at the ceiling, about $0.50.
 
 ## The cap
 
@@ -53,7 +60,7 @@ reflect stops calling the API in a session once its logged spend reaches $0.50, 
 
 ## Spending less
 
-- Fire less often: `REFLECT_POLICY=k3w8` (3 pushbacks in 8 messages) or `k2w6-med` (ignores low-confidence verdicts). In the August replay `k3w8` fired 8 times against 20 for `k2w6`, and found fewer of the sessions that needed it.
+- Fire less often: `REFLECT_POLICY=k3w8` (3 pushbacks in 8 messages) or `k2w6-med` (ignores low-confidence verdicts). In the replay with Haiku 5.5 verdicts `k3w8` fired 10 times against 21 for `k2w6`, and reached fewer of the sessions that needed a note (56% against 65%).
 - Use a cheaper reflection model: `REFLECT_MODEL=claude-sonnet-5-5` is half Opus 5.5's price per token. Its notes have not been compared with Opus 5.5's.
 - Lower `REFLECT_EFFORT`. Less thinking means fewer output tokens.
 

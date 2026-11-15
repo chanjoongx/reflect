@@ -201,7 +201,7 @@ it.
 
 | gate θ | judge calls / 100 | precision | recall | F0.5 |
 |---:|---:|---:|---:|---:|
-| 0.00 | 68 | 87.9% | 49.6% | 76.1% |
+| 0.00 | 68 | 87.0% | 47.5% | 74.6% |
 | 0.30 | 61 | 90.3% | 46.1% | 75.8% |
 | 0.50 | 47 | 94.6% | 37.6% | 72.6% |
 | 0.70 | 29 | 96.0% | 24.1% | 61.2% |
@@ -407,11 +407,49 @@ Opus call each time. Two within six turns is the first point at which "what does
 missing?" has an answer. Whether the note changes the agent's next turns is not measured by any of
 this. That needs a session-level experiment with and without delivery, which no file here runs.
 
-**The judge changed model after it was measured.** 0.2 calls Claude Haiku 5.5 ($0.10 / $0.50 per
-MTok, against $1 / $5 for Haiku 4.5). Every number in this document is Haiku 4.5. The rubric is
-unchanged (fingerprint `c74d7145eb`), so `npx tsx bench/label.ts --runs h55,h55t` relabels the 837
-pairs for under a dollar, and `npm run bench:sim -- --run h55` repeats the replay. It has not been
-run yet.
+**The judge on Claude Haiku 5.5 (rerun 2026-11-16).** 0.2 calls Claude Haiku 5.5 ($0.10 / $0.50
+per MTok, against $1 / $5 for Haiku 4.5). The rubric is unchanged (fingerprint `c74d7145eb`), and
+`npx tsx bench/label.ts --runs h55,h55t` relabelled the same 837 pairs for $0.39 with no failed
+calls. `bench/score.ts` §12 scores both runs behind the θ = 0 gate against the same Opus 5
+reference, with Haiku 4.5 rescored on the same pairs:
+
+| judge | precision | recall | F1 | F0.5 | Δ F0.5 vs Haiku 4.5 (95% CI, by session) | same label as reference (7 labels) | per call |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Haiku 4.5 (`prod`, August) | 87.0% | 47.5% | 61.5% | 74.6% | | 84.5% | $0.0043 |
+| **Haiku 5.5, thinking off (`h55`, shipped)** | **97.4%** | **53.9%** | **69.4%** | **83.9%** | +9.3 (+2.5 to +18.5) | 85.7% | $0.00023 |
+| Haiku 5.5, adaptive thinking at effort low (`h55t`) | 93.6% | 51.8% | 66.7% | 80.6% | +6.0 (-1.7 to +16.1) | 85.2% | $0.00024 |
+
+In counts: Haiku 5.5 flags 78 turns, 76 of them pushback by the reference, and finds 76 of the
+141; Haiku 4.5 flagged 77, 67 of them pushback. Adaptive thinking added three output tokens per
+call on average, so at effort low it barely engaged, and the run without it is better on every
+column. The judge's system prompt (3,287 Haiku 5.5 tokens) now clears the caching floor that
+Haiku 4.5's did not (§10): every call in the run read it from cache, which is why a call costs
+$0.00023 rather than $0.00053.
+
+The replay on the Haiku 5.5 verdicts (`npm run bench:sim -- --run h55`):
+
+| policy | fires | supported | sessions fired | should fire | session precision | session recall |
+|---|---:|---:|---:|---:|---:|---:|
+| each pushback | 78 | 76 (97.4%) | 37 | 49 | 100.0% | 75.5% |
+| **k2w6 (default)** | 21 | 21 (100.0%) | 17 | 26 | 100.0% | 65.4% |
+| k3w8 | 10 | 10 (100.0%) | 9 | 16 | 100.0% | 56.3% |
+
+21 supported fires out of 21 has a Wilson 95% interval of 85% to 100%. The model was chosen after
+the rubric was frozen, so this comparison does not tune the rubric to Haiku 5.5; the rubric, the
+gate and the trigger were still all chosen on this corpus.
+
+**One live session.** On 2026-11-16 the bundled plugin ran in four `claude -p --resume` turns of a
+scratch session, with the key passed only to the hooks. Turn 1 was skipped as a session opener;
+turns 2 and 3 ("No, that's not what I asked for", "Still wrong: you added a heading again") were
+judged correction, high; turn 3 fired `k2w6`; Opus 5.5 wrote the note in 10.3 s for $0.0197; it
+was delivered when turn 4 started, and the agent's reply did the check the note named. The first
+attempt lost the note: `claude -p` exits as soon as the agent answers, and the async hook,
+mid-reflection, went with it. The reflection now runs in a detached worker process. This is one
+toy session, and it tests the wiring, not whether notes help.
+
+**A corrected row.** The θ = 0 row of the table in §5 read 87.9% / 49.6% / 76.1% until 2026-11-16.
+No run produces those numbers; the generated `bench/results/report.md` has always given 87.0% /
+47.5% / 74.6%, and the row now matches it.
 
 **Still open from §11.** The reference is still a model. The human review sheets are still empty.
 The corpus is still one developer's, two thirds of it not coding.

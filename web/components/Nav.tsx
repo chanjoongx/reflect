@@ -4,7 +4,7 @@ import { NavLinks, type NavRoute } from "./NavLinks";
 
 const routes: NavRoute[] = [
   { href: "/", label: "Dashboard" },
-  { href: "/reflections", label: "Reflections" },
+  { href: "/reflections", label: "Notes" },
   { href: "/patterns", label: "Patterns" },
   { href: "/install", label: "Install" },
   { href: "/roadmap", label: "Roadmap" },

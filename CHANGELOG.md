@@ -12,13 +12,14 @@ Semver: MAJOR.MINOR.PATCH.
 
 ### Changed
 
-- **Detection.** Each developer message after the agent's first reply is judged with the agent's previous turn beside it (read from the session transcript) by Claude Haiku 5.5 with structured output. Labels follow SWE-chat: correction, rejection and failure report count as pushback. The git and regex signals are gone. Measured with a Haiku 4.5 judge against Claude Opus 5 labels: 87.9% precision, 49.6% recall per turn, against 0% recall for 0.1.4.
-- **Trigger.** A sliding window replaces the weighted counter: two pushbacks within six developer turns, then a three-turn cooldown (`REFLECT_POLICY` picks another policy). Replayed over the benchmark it fires in 16 sessions, 15 of which the reference agrees with (`npm run bench:sim`).
-- **Reflection.** Claude Opus 5.5 with adaptive thinking reads exactly the turns that tripped the trigger, including the developer's words and the judge's evidence. The output adds a counter-hypothesis, a check to run first, and an expiry of 3 to 12 turns.
+- **Detection.** Each developer message after the agent's first reply is judged with the agent's previous turn beside it (read from the session transcript) by Claude Haiku 5.5 with structured output. Labels follow SWE-chat: correction, rejection and failure report count as pushback. The git and regex signals are gone. Against Claude Opus 5 labels on the 837-turn benchmark it reaches 97.4% precision and 53.9% recall per turn (76 of 141 pushback turns found, 2 false alarms), against 0 of 141 for 0.1.4. The Haiku 4.5 judge measured in August reached 87.0% and 47.5%.
+- **Trigger.** A sliding window replaces the weighted counter: two pushbacks within six developer turns, then a three-turn cooldown (`REFLECT_POLICY` picks another policy). Replayed over the benchmark with the Haiku 5.5 verdicts it fires 21 times in 17 sessions, all on turns the reference calls pushback, and reaches 17 of the 26 sessions where the reference labels trip it (`npm run bench:sim -- --run h55`).
+- **Reflection.** Claude Opus 5.5 with adaptive thinking reads exactly the turns that tripped the trigger, including the developer's words and the judge's evidence. It runs in a detached worker process, so it survives `claude -p` ending the hook when the agent answers. Two live runs took about 10 s and cost $0.020 and $0.029. The output adds a counter-hypothesis, a check to run first, and an expiry of 3 to 12 turns.
 - **Delivery.** The note reaches the agent once, as `additionalContext` on its next tool call or the developer's next prompt, and is re-delivered after compaction while it is in force. 0.1 wrote a file and relied on a path-scoped rule to load it.
 - **One implementation.** The two bash and two PowerShell hooks and the TypeScript reference are replaced by `src/`, bundled into the committed `hooks/reflect-hook.mjs`. A plugin install needs only `node` 20. The Anthropic SDK sits in a chunk that only the model calls load, so the hooks that run on every tool call stay light.
 - **State.** An append-only event log per session in `.reflect/sessions/`, a lock around firing, a claim file so that parallel tool calls deliver a note once, `.reflect/.gitignore`, and pruning 7 days after a session's last event. A verdict that arrives late cannot fire a second reflection on turns that already fired.
 - **Models and SDK.** `@anthropic-ai/sdk` 1.5 (bundled; no runtime dependencies). Pricing table updated to 2026-11-16 rates.
+- **Viewer.** The local Next.js viewer in `web/` reads the 0.2 session logs: each turn with its verdict, the trigger window, fires, notes and how each was delivered, and spend against the cap.
 - **CLI.** `reflect status`, `manual`, `doctor`, `init`, `on`, `off`. `/brain-reflect` works without an API key by asking the agent to reflect on its own context.
 
 ### Added
@@ -31,6 +32,7 @@ Semver: MAJOR.MINOR.PATCH.
 
 ### Fixed
 
+- On Windows, Node 24 aborted with a libuv assertion (`!(handle->flags & UV_HANDLE_CLOSING)`) when the hook exited right after an API call. The entry point now sets the exit code and lets the process end on its own.
 - `<ide_opened_file>` and `<ide_selection>` blocks were left in developer messages, because the pattern in `src/transcript/parse.ts` was built in a template literal that dropped its backslashes. The August benchmark data contains none of these tags, so its numbers are unchanged.
 
 ### Removed
@@ -42,8 +44,7 @@ Semver: MAJOR.MINOR.PATCH.
 
 ### Known gaps
 
-- The benchmark numbers were measured with Haiku 4.5; the Haiku 5.5 rerun is pending. No human has checked the reference labels yet.
-- The local viewer in `web/` still reads the 0.1 files.
+- No human has checked the reference labels yet, and the rubric, gate and trigger were all chosen on the benchmark corpus.
 
 ## [0.1.4] — 2026-04-29
 

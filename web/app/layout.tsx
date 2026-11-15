@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const title = "reflect — session-local metacognition for Claude Code";
+const title = "reflect Viewer";
 const description =
-  "A harness for the model 6 months from now. When suggestions get reverted three times in ten tool calls, Opus 4.7 reasons about why and injects guidance for the next turn.";
+  "Local viewer for reflect 0.2 sessions: each developer turn's verdict, the trigger window, the notes written and when the agent received them.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("http://localhost:3000"),

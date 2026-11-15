@@ -5,16 +5,20 @@
 //                                              that is still in force
 //   prompt         UserPromptSubmit    sync   record the turn; deliver pending
 //                                              guidance
-//   judge          UserPromptSubmit    async  pair -> gate -> judge -> trigger
-//                                              -> reflection. Never blocks the
-//                                              developer: Claude Code does not
-//                                              wait for an async hook.
+//   judge          UserPromptSubmit    async  pair -> gate -> judge -> trigger.
+//                                              Never blocks the developer:
+//                                              Claude Code does not wait for an
+//                                              async hook. A fire starts the
+//                                              reflection in a detached worker
+//                                              (reflect-worker), which outlives
+//                                              the hook process.
 //   tool           PostToolUse         sync   deliver pending guidance mid-turn,
 //                                              before the agent's next edit
 //
 // Contract inherited from v0.1 and kept: a hook never blocks, never fails the
 // prompt, and exits 0. Every error becomes an `error` event in the session log.
 
+import { spawn } from "node:child_process";
 import { existsSync, openSync, readSync, closeSync, fstatSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { structuralGate } from "../detect/structural.js";
@@ -44,6 +48,8 @@ import {
 
 export type HookMode = "session-start" | "prompt" | "judge" | "tool";
 export const HOOK_MODES: readonly HookMode[] = ["session-start", "prompt", "judge", "tool"];
+/** Internal: `node reflect-hook.mjs reflect-worker <projectDir> <sessionId> <firePromptId>`. */
+export const WORKER_MODE = "reflect-worker";
 
 const EVENT_NAME: Record<HookMode, string> = {
   "session-start": "SessionStart",
@@ -72,6 +78,12 @@ export interface HookDeps {
   readTranscript: (path: string) => string | null;
   /** Tests inject a client; otherwise each call builds one from the key in `env`. */
   makeClient?: () => import("@anthropic-ai/sdk").default;
+  /**
+   * Start the reflection for a fire in a process that outlives this one, and
+   * return true if it started. Without it, or when it returns false, the judge
+   * hook runs the reflection itself.
+   */
+  detach?: (projectDir: string, sessionId: string, firePromptId: string) => boolean;
 }
 
 // The model calls load the SDK on first use. SessionStart, the sync prompt hook
@@ -82,7 +94,31 @@ export const defaultDeps = (env: NodeJS.ProcessEnv = process.env): HookDeps => (
   judge: async (pair, opts) => (await import("../detect/judge.js")).judgePair(pair, opts),
   reflect: async (turns, window, opts) => (await import("../reflect/reflection.js")).callReflection(turns, window, opts),
   readTranscript: readTail,
+  detach: spawnWorker,
 });
+
+/**
+ * The reflection takes about ten seconds. `claude -p` ends its process, and the
+ * async hook with it, as soon as the agent answers, which in a short turn is
+ * sooner than that. A detached worker is not killed with it.
+ */
+function spawnWorker(projectDir: string, sessionId: string, firePromptId: string): boolean {
+  const script = process.argv[1];
+  if (!script || !existsSync(script)) return false;
+  try {
+    const child = spawn(process.execPath, [script, WORKER_MODE, projectDir, sessionId, firePromptId], {
+      cwd: projectDir,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.on("error", () => {});
+    child.unref();
+    return child.pid !== undefined;
+  } catch {
+    return false;
+  }
+}
 
 /** 401 and 403 from the API: retrying with the same key cannot succeed. */
 function isAuthFailure(e: unknown): boolean {
@@ -320,13 +356,13 @@ export async function runHook(
 }
 
 /**
- * True for exactly one caller per guidance id. Parallel tool calls run their
- * PostToolUse hooks at the same moment; reading the log is not enough to stop
- * each of them delivering the same note.
+ * True for exactly one caller per name in a session. Parallel tool calls run
+ * their PostToolUse hooks at the same moment, and a worker could be started
+ * twice for one fire; reading the log is not enough to stop either repeating.
  */
-function claimDelivery(projectDir: string, sessionId: string, id: string): boolean {
+function claimOnce(projectDir: string, sessionId: string, name: string): boolean {
   try {
-    closeSync(openSync(join(sessionDir(projectDir, sessionId), `delivered-${id}`), "wx"));
+    closeSync(openSync(join(sessionDir(projectDir, sessionId), name.replace(/[^A-Za-z0-9_.-]/g, "_")), "wx"));
     return true;
   } catch {
     return false;
@@ -337,7 +373,7 @@ function deliver(mode: HookMode, projectDir: string, sessionId: string): string 
   const events = readEvents(projectDir, sessionId);
   const g = pendingGuidance(events);
   if (!g) return null;
-  if (!claimDelivery(projectDir, sessionId, g.id)) return null;
+  if (!claimOnce(projectDir, sessionId, `delivered-${g.id}`)) return null;
   appendEvent(projectDir, sessionId, {
     t: "delivered",
     at: now(),
@@ -458,13 +494,35 @@ export async function judgeTurn(
       evidence: hit.evidence,
       policyId: cfg.policy.id,
     });
-    return { hit, events, order, verdicts };
+    return hit;
   });
   if (!fired) return;
 
-  // 5. The reflection, outside the lock: it takes seconds.
-  const { hit, order, verdicts } = fired;
-  const turns: EvidenceTurn[] = hit.evidence
+  // 5. The reflection, outside the lock and if possible outside this process.
+  if (deps.detach?.(projectDir, sessionId, fired.promptId)) return;
+  await reflectForFire(projectDir, sessionId, fired.promptId, deps);
+}
+
+/**
+ * Write the note for a recorded fire. Runs in the worker, or in the judge hook
+ * when the worker cannot start. A second call for the same fire does nothing.
+ */
+export async function reflectForFire(
+  projectDir: string,
+  sessionId: string,
+  firePromptId: string,
+  deps: HookDeps,
+): Promise<void> {
+  const cfg = loadConfig(deps.env);
+  const events = readEvents(projectDir, sessionId);
+  const fire = events.find((e): e is Extract<HookEvent, { t: "fire" }> => e.t === "fire" && e.promptId === firePromptId);
+  if (!fire) return;
+  if (!claimOnce(projectDir, sessionId, `reflecting-${firePromptId}`)) return;
+
+  const order = promptOrder(events);
+  const verdicts = new Map<string, Extract<HookEvent, { t: "verdict" }>>();
+  for (const e of events) if (e.t === "verdict") verdicts.set(e.promptId, e);
+  const turns: EvidenceTurn[] = fire.evidence
     .map((pid): EvidenceTurn | null => {
       const v = verdicts.get(pid);
       if (!v) return null;
@@ -480,11 +538,11 @@ export async function judgeTurn(
     .filter((t): t is EvidenceTurn => t !== null);
 
   // The judge checked the cap before its call; the reflection costs far more, so check again.
-  if (sessionSpend(readEvents(projectDir, sessionId)) >= cfg.maxUsdPerSession) {
-    appendEvent(projectDir, sessionId, { t: "skip", at: now(), promptId: hit.promptId, reason: "budget" });
+  if (sessionSpend(events) >= cfg.maxUsdPerSession) {
+    appendEvent(projectDir, sessionId, { t: "skip", at: now(), promptId: firePromptId, reason: "budget" });
     return;
   }
-  await reflectAndRecord(turns, cfg, projectDir, sessionId, hit.promptId, deps, false);
+  await reflectAndRecord(turns, cfg, projectDir, sessionId, firePromptId, deps, false);
 }
 
 export async function reflectAndRecord(

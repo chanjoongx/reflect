@@ -1,29 +1,47 @@
 {
   "name": "reflect",
-  "version": "0.1.4",
-  "description": "Session-local metacognition harness for long-running Claude Code work. When suggestions get reverted, Opus 4.7 reasons about why and injects guidance into the next turn.",
+  "version": "0.2.0",
+  "description": "Notices when you keep pushing back on Claude Code, works out why, and tells the agent before its next step. Each of your messages is judged by Claude Haiku 5.5; when two land as pushback within six turns, Claude Opus 5.5 reads them and the agent receives a short note.",
   "author": {
     "name": "Chanjoong Kim",
     "email": "cj@chanjoongx.com",
-    "url": "https://github.com/chanjoongx"
+    "url": "https://chanjoongx.com"
   },
   "homepage": "https://github.com/chanjoongx/reflect",
   "repository": "https://github.com/chanjoongx/reflect",
+  "documentationUrl": "https://github.com/chanjoongx/reflect#readme",
+  "supportUrl": "https://github.com/chanjoongx/reflect/issues",
+  "privacyPolicyUrl": "https://github.com/chanjoongx/reflect/blob/main/PRIVACY.md",
   "license": "MIT",
   "keywords": [
-    "claude-code",
     "metacognition",
     "session-local",
     "reflection",
-    "opus-4-7",
-    "long-running",
-    "harness",
-    "ai-agents"
+    "pushback",
+    "correction-detection",
+    "hooks",
+    "long-running"
   ],
-  "commands": [
-    "./commands/brain-reflect.md"
-  ],
-  "agents": [
-    "./agents/reflection-orchestrator.md"
-  ]
+  "userConfig": {
+    "anthropic_api_key": {
+      "type": "string",
+      "title": "Anthropic API key",
+      "description": "Used for the judge and reflection calls, billed to this key. Leave empty if ANTHROPIC_API_KEY is already set in your environment or you use `ant auth login`.",
+      "sensitive": true
+    },
+    "reflection_model": {
+      "type": "string",
+      "title": "Reflection model",
+      "description": "Model that writes the reflection when pushback clusters. The judge on each message is always Claude Haiku 5.5.",
+      "default": "claude-opus-5-5"
+    },
+    "max_usd_per_session": {
+      "type": "number",
+      "title": "Spend cap per session (USD)",
+      "description": "reflect stops calling the API in a session once its calls there have cost this much.",
+      "default": 0.5,
+      "min": 0.01,
+      "max": 100
+    }
+  }
 }

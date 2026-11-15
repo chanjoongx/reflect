@@ -17,9 +17,11 @@ import { join } from "node:path";
 import {
   judgePair,
   judgeFingerprint,
+  BENCH_PROD_MODEL,
   DEFAULT_JUDGE_MODEL,
   REFERENCE_JUDGE_MODEL,
 } from "../src/detect/judge.js";
+import type { JudgeThinking } from "../src/detect/judge.js";
 import { costUSD, formatUSD } from "../src/pricing.js";
 import type { Pair, JudgeVerdict } from "../src/detect/types.js";
 
@@ -32,22 +34,32 @@ export interface RunSpec {
   fairBlind?: boolean;
   /** Replace each pair's prior turn with another pair's — the format placebo. */
   shuffledPrior?: boolean;
+  /** Unset for every 2026-08 run, which sent neither field. */
+  thinking?: JudgeThinking;
+  effort?: "low" | "medium" | "high";
 }
 
 export const RUNS: Record<string, RunSpec> = {
+  // The 2026-08 arms are pinned to the models that produced their cached
+  // labels. Pointing them at DEFAULT_JUDGE_MODEL would let a product default
+  // change relabel the benchmark under an old run name.
   ref: { id: "ref", model: REFERENCE_JUDGE_MODEL, blind: false },
-  prod: { id: "prod", model: DEFAULT_JUDGE_MODEL, blind: false },
-  blind: { id: "blind", model: DEFAULT_JUDGE_MODEL, blind: true },
+  prod: { id: "prod", model: BENCH_PROD_MODEL, blind: false },
+  blind: { id: "blind", model: BENCH_PROD_MODEL, blind: true },
   // Fair control for `blind`: same missing context, but a system prompt that
   // does not promise context it will not receive. Separates information loss
   // from prompt mismatch.
-  blindfair: { id: "blindfair", model: DEFAULT_JUDGE_MODEL, blind: true, fairBlind: true },
+  blindfair: { id: "blindfair", model: BENCH_PROD_MODEL, blind: true, fairBlind: true },
   // The control that decides the relational claim. Identical rendering to
   // `prod` — same prompt, same "here is what the agent just did" block, same
   // token budget — but the prior turn belongs to a DIFFERENT pair. If this
   // scores like `prod`, the sighted arm was gaining format, not information.
   // If it scores like `blind`, the information is what mattered.
-  shuffled: { id: "shuffled", model: DEFAULT_JUDGE_MODEL, blind: false, shuffledPrior: true },
+  shuffled: { id: "shuffled", model: BENCH_PROD_MODEL, blind: false, shuffledPrior: true },
+  // 2026-11: the judge v0.2 ships. Same rubric, so the same fingerprint; only
+  // the model and its thinking mode differ from `prod`.
+  h55: { id: "h55", model: DEFAULT_JUDGE_MODEL, blind: false, thinking: "off", effort: "low" },
+  h55t: { id: "h55t", model: DEFAULT_JUDGE_MODEL, blind: false, thinking: "adaptive", effort: "low" },
 };
 
 interface CacheRow {
@@ -271,6 +283,8 @@ async function main() {
             model: spec.model,
             blind: spec.blind,
             ...(spec.fairBlind === true ? { fairBlind: true } : {}),
+            ...(spec.thinking !== undefined ? { thinking: spec.thinking } : {}),
+            ...(spec.effort !== undefined ? { effort: spec.effort } : {}),
           });
           const row: CacheRow = {
             pairId: p.pairId,

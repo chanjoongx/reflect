@@ -1,8 +1,10 @@
 // src/detect/judge.ts — Stage C: the relational correction judge.
 //
 // ONE implementation, two callers:
-//   • bench/label.ts       — offline, over a corpus, any model
-//   • the Claude Code hook — online, via a `type: "prompt"` hook or this API path
+//   • bench/label.ts: offline, over a corpus, any model
+//   • src/hook/run.ts: online, from an async UserPromptSubmit hook.
+//     (A `type: "prompt"` hook cannot do this job: it may only answer
+//     {ok, reason}, i.e. allow or block, and blocking a prompt is never ours.)
 // Keeping it single-sourced is deliberate: evals/FINDINGS.md exists because the
 // detector had five implementations that drifted apart.
 //
@@ -13,14 +15,16 @@
 // (observed: label "undo_request", confidence 0.92) — which is exactly the
 // failure mode structured output removes.
 
+import Anthropic from "@anthropic-ai/sdk";
 import type { JudgeUsage, JudgeVerdict, Label, Pair } from "./types.js";
 import { LABELS } from "./types.js";
 import { redactString, safeTruncate, safeTruncateEnd } from "../redact.js";
+import { makeClient } from "../api/client.js";
+import { PRIOR_TEXT_CHARS, renderPriorTurn } from "./render.js";
 
-export const DEFAULT_JUDGE_MODEL = "claude-haiku-4-5";
-export const REFERENCE_JUDGE_MODEL = "claude-opus-5";
+import { DEFAULT_JUDGE_MODEL } from "../models.js";
 
-const API_URL = "https://api.anthropic.com/v1/messages";
+export { DEFAULT_JUDGE_MODEL, BENCH_PROD_MODEL, REFERENCE_JUDGE_MODEL } from "../models.js";
 
 // ─── Output schema ────────────────────────────────────────────────────
 
@@ -193,45 +197,9 @@ export const JUDGE_SYSTEM_BLIND = (() => {
 
 // ─── Rendering ────────────────────────────────────────────────────────
 
-const PRIOR_TEXT_CHARS = 1400;
 const PROMPT_CHARS = 2500;
 
-export function renderPriorTurn(pair: Pair): string {
-  const prior = pair.prior;
-  if (!prior) return "(The agent has not spoken yet in this session.)";
-
-  const calls = prior.toolCalls;
-  const mut = calls.filter((c) => c.mutating).length;
-  const err = calls.filter((c) => c.errored).length;
-
-  const lines: string[] = [];
-  if (calls.length) {
-    const shown = calls.slice(-14);
-    lines.push(
-      `Agent actions this turn (${calls.length} total, ${mut} modified files, ${err} errored)` +
-        (calls.length > shown.length ? `, last ${shown.length} shown:` : ":"),
-    );
-    for (const c of shown) {
-      const flags = `${c.mutating ? " [modified]" : ""}${c.errored ? " [error]" : ""}`;
-      lines.push(`  - ${c.name}: ${safeTruncate(redactString(c.target), 120)}${flags}`);
-    }
-  } else {
-    lines.push("Agent actions this turn: none (it replied without using tools).");
-  }
-
-  const text = redactString(prior.text).trim();
-  if (text) {
-    const tail =
-      text.length > PRIOR_TEXT_CHARS
-        ? "…" + safeTruncateEnd(text, PRIOR_TEXT_CHARS)
-        : text;
-    lines.push("", "What the agent said, ending its turn:", '"""', tail, '"""');
-  } else {
-    lines.push("", "The agent produced no visible text this turn.");
-  }
-
-  return lines.join("\n");
-}
+export { renderPriorTurn };
 
 export function buildUserMessage(pair: Pair, blind: boolean): string {
   const prompt = safeTruncate(redactString(pair.prompt), PROMPT_CHARS);
@@ -291,16 +259,27 @@ export function judgeFingerprint(): string {
 
 // ─── API call ─────────────────────────────────────────────────────────
 
+export type JudgeThinking = "off" | "adaptive";
+
 export interface JudgeOptions {
-  apiKey: string;
+  /** Injected client (the hook and tests pass one); otherwise built from `apiKey`. */
+  client?: Anthropic;
+  apiKey?: string;
   model?: string;
-  /** Omit the prior turn — the stateless-judge ablation. */
+  /** Omit the prior turn: the stateless-judge ablation. */
   blind?: boolean;
   /** With `blind`, also use the framing that does not promise context. */
   fairBlind?: boolean;
+  /**
+   * Thinking mode for models that take one. Left unset, the request sends no
+   * `thinking` and no `effort`, which is exactly what the 2026-08 benchmark runs
+   * sent; changing that would change the annotator behind every cached label.
+   */
+  thinking?: JudgeThinking;
+  effort?: "low" | "medium" | "high";
   maxTokens?: number;
   timeoutMs?: number;
-  /** Retries on 429/5xx/network. */
+  /** SDK-level retries on 408/409/429/5xx and connection errors. */
   maxRetries?: number;
 }
 
@@ -336,6 +315,9 @@ const RETRYABLE_CODES = new Set([
 export function isRetryable(e: unknown): boolean {
   if (e instanceof ParseFailure) return false;
   if (e instanceof RetryableError) return true;
+  if (e instanceof Anthropic.RateLimitError || e instanceof Anthropic.InternalServerError) return true;
+  if (e instanceof Anthropic.APIConnectionError) return true;
+  if (e instanceof Anthropic.APIError) return false;
   if (!(e instanceof Error)) return false;
   if (e.name === "AbortError" || e.name === "TimeoutError") return true;
   const code = (e as { cause?: { code?: string } }).cause?.code;
@@ -345,16 +327,35 @@ export function isRetryable(e: unknown): boolean {
   return e.name === "TypeError" || e.message === "terminated";
 }
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+/**
+ * Per-model request shaping. Haiku 4.5 rejects `effort`; Claude Haiku 5.5
+ * accepts `thinking: disabled` only at effort `high` or below.
+ */
+export function thinkingParams(
+  model: string,
+  thinking: JudgeThinking | undefined,
+  effort: "low" | "medium" | "high" | undefined,
+): Pick<Anthropic.MessageCreateParamsNonStreaming, "thinking" | "output_config"> {
+  if (thinking === undefined) return {};
+  if (model.startsWith("claude-haiku-4-5")) return {};
+  const e = effort ?? "low";
+  return thinking === "off"
+    ? { thinking: { type: "disabled" }, output_config: { effort: e } }
+    : { thinking: { type: "adaptive" }, output_config: { effort: e } };
 }
 
 export async function judgePair(pair: Pair, opts: JudgeOptions): Promise<JudgeResult> {
   const model = opts.model ?? DEFAULT_JUDGE_MODEL;
-  const maxRetries = opts.maxRetries ?? 4;
-  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const client =
+    opts.client ??
+    makeClient({
+      ...(opts.apiKey !== undefined ? { apiKey: opts.apiKey } : {}),
+      maxRetries: opts.maxRetries ?? 4,
+      timeoutMs: opts.timeoutMs ?? 60_000,
+    });
 
-  const body = {
+  const shaped = thinkingParams(model, opts.thinking, opts.effort);
+  const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
     max_tokens: opts.maxTokens ?? 2000,
     system: [
@@ -365,93 +366,53 @@ export async function judgePair(pair: Pair, opts: JudgeOptions): Promise<JudgeRe
       },
     ],
     messages: [{ role: "user", content: buildUserMessage(pair, opts.blind === true) }],
-    output_config: { format: { type: "json_schema", schema: VERDICT_SCHEMA } },
+    ...(shaped.thinking ? { thinking: shaped.thinking } : {}),
+    output_config: {
+      ...(shaped.output_config ?? {}),
+      format: { type: "json_schema", schema: VERDICT_SCHEMA as unknown as Record<string, unknown> },
+    },
   };
 
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) await sleep(Math.min(1000 * 2 ** attempt, 20_000) * (0.7 + Math.random() * 0.6));
-    const t0 = Date.now();
-    try {
-      // The timer must span the BODY as well. `fetch` resolves as soon as
-      // headers arrive; a server that then stalls mid-stream would hang the
-      // worker forever, and at concurrency 12 a few of those wedge the run
-      // with no error to show for it.
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), timeoutMs);
-      let json: any;
-      try {
-        const res = await fetch(API_URL, {
-          method: "POST",
-          headers: {
-            "x-api-key": opts.apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify(body),
-          signal: ac.signal,
-        });
+  const t0 = Date.now();
+  const res = await client.messages.create(params);
 
-        if (res.status === 429 || res.status >= 500) {
-          // Drain the body so undici can release the socket, and honour
-          // retry-after when the server sends one.
-          await res.text().catch(() => "");
-          const ra = Number(res.headers.get("retry-after"));
-          if (Number.isFinite(ra) && ra > 0) await sleep(Math.min(ra * 1000, 60_000));
-          throw new RetryableError(`HTTP ${res.status}`);
-        }
-
-        json = await res.json();
-      } finally {
-        clearTimeout(timer);
-      }
-      if (json.error) {
-        if (json.error.type === "overloaded_error" || json.error.type === "rate_limit_error") {
-          throw new RetryableError(json.error.type);
-        }
-        throw new Error(`${json.error.type}: ${json.error.message}`);
-      }
-
-      const text = (json.content ?? [])
-        .filter((b: any) => b.type === "text")
-        .map((b: any) => b.text)
-        .join("");
-
-      if (!text.trim()) {
-        // Empty text block. On thinking-enabled models this is almost always
-        // the output budget being consumed before any answer was emitted.
-        throw new Error(
-          `judge returned no text (stop_reason=${json.stop_reason}, out=${json.usage?.output_tokens}, blocks=${(json.content ?? []).map((b: any) => b.type).join("+")})`,
-        );
-      }
-
-      let verdict: JudgeVerdict;
-      try {
-        verdict = parseVerdict(text);
-      } catch (pe) {
-        throw new Error(
-          `${pe instanceof Error ? pe.message : String(pe)} (stop_reason=${json.stop_reason}, out=${json.usage?.output_tokens})`,
-        );
-      }
-      const u = json.usage ?? {};
-      return {
-        verdict,
-        usage: {
-          inputTokens: u.input_tokens ?? 0,
-          outputTokens: u.output_tokens ?? 0,
-          cacheReadTokens: u.cache_read_input_tokens ?? 0,
-          cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
-          latencyMs: Date.now() - t0,
-          model: json.model ?? model,
-        },
-      };
-    } catch (e) {
-      lastErr = e;
-      const retryable = isRetryable(e);
-      if (!retryable || attempt === maxRetries) break;
-    }
+  if (res.stop_reason === "refusal") {
+    throw new ParseFailure(`judge refused (${res.stop_details?.category ?? "uncategorised"})`);
   }
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+
+  if (!text.trim()) {
+    // Empty text block. On thinking-enabled models this is almost always
+    // the output budget being consumed before any answer was emitted.
+    throw new Error(
+      `judge returned no text (stop_reason=${res.stop_reason}, out=${res.usage.output_tokens}, blocks=${res.content.map((b) => b.type).join("+")})`,
+    );
+  }
+
+  let verdict: JudgeVerdict;
+  try {
+    verdict = parseVerdict(text);
+  } catch (pe) {
+    throw new ParseFailure(
+      `${pe instanceof Error ? pe.message : String(pe)} (stop_reason=${res.stop_reason}, out=${res.usage.output_tokens})`,
+    );
+  }
+  const u = res.usage;
+  return {
+    verdict,
+    usage: {
+      inputTokens: u.input_tokens ?? 0,
+      outputTokens: u.output_tokens ?? 0,
+      cacheReadTokens: u.cache_read_input_tokens ?? 0,
+      cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
+      latencyMs: Date.now() - t0,
+      model: res.model ?? model,
+    },
+  };
 }
 
 // ─── Parsing ──────────────────────────────────────────────────────────

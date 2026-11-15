@@ -1,5 +1,11 @@
 # reflect v2 — 고도화 플랜
 
+> **⚑ P1 구현 (2026-11-16, 0.2.0 미출시).** 캐스케이드를 훅으로 옮겼다. 메시지마다 구조 게이트(θ=0) 뒤
+> Haiku 5.5 판정(async), 트리거는 k2w6 슬라이딩 윈도(`bench/session-sim.ts` 재생: 세션 정밀도 93.8% · 재현율 57.7%),
+> 반성은 Opus 5.5, 전달은 additionalContext 한 번(만료 · 압축 뒤 재전달). 셸 훅 4개와 TS 레퍼런스를 `src/` 하나와
+> 커밋된 번들(`hooks/reflect-hook.mjs`)로 바꿨다. 남은 것: Haiku 5.5 재라벨(1달러 미만), 사람 라벨, 전달이 실제로
+> 에이전트를 바꾸는지 보는 세션 실험. 상세는 `CHANGELOG.md` [0.2.0] · `bench/FINDINGS.md` §14.
+
 > **⚑ P0 게이트 통과 — 실행·적대적 검토 완료 (2026-08-23).** 이 플랜의 §7 P0는 "종이 위에서 먼저 증명,
 > 실패 시 v2를 만들지 않는다"는 조건부였다. 실행했고, 통과했고, 적대적 리뷰를 거쳐 수치를 정정했다.
 > 전체는 [`bench/FINDINGS.md`](bench/FINDINGS.md) · [`bench/results/report.md`](bench/results/report.md).
@@ -461,4 +467,4 @@ reflect 자신의 스팬을 GenAI semconv로 방출 (`gen_ai.operation.name` + `
 - Harness Engineering for Agentic AI Coding Tools — arXiv 2602.14690 (AIware'26)
 - Claude Code Hooks reference — <https://code.claude.com/docs/en/hooks>
 - OpenTelemetry GenAI semantic conventions (agent spans, provisional)
-- reflect 자체: `evals/FINDINGS.md`, `experiments/ablation-with-without.md`, `docs/measurements.md`
+- reflect 자체: `evals/FINDINGS.md`, `docs/v0.1/experiments/ablation-with-without.md`, `docs/v0.1/measurements.md`

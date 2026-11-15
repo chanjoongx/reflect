@@ -378,3 +378,41 @@ different. It cost $3.62, and it is the only reason §4 is a result rather than 
 The second lesson is smaller and more embarrassing. Twelve real bugs surfaced in a single day,
 none visible in the numbers, most in code whose own comments claimed it was tested. An independent
 recomputation found two of them. An adversarial reader found the rest. Neither was optional.
+
+---
+
+## 14. What 0.2 ships, and what is still unmeasured (added 2026-11-16)
+
+The cascade above is now the product. `src/hook/run.ts` runs it from Claude Code hooks: the
+structural gate with its one hard rule (θ = 0, no threshold), then the judge, on every developer
+message. The benchmark and the hook share `pairForPrompt` in `src/transcript/parse.ts`, which
+wraps the same transcript walker the extractor uses. Over 1,477 live transcripts the refactored
+walker produced 3,002 pairs identical to those of the August version.
+
+**The trigger was chosen by replay, in-sample.** `bench/session-sim.ts` feeds cached `prod`
+verdicts through each policy in `src/trigger/accumulator.ts`, with the same policy run on the
+reference labels as the target:
+
+| policy | fires | supported | sessions fired | should fire | session precision | session recall |
+|---|---:|---:|---:|---:|---:|---:|
+| 0.1.4 as shipped | 0 | n/a | 0 | n/a | n/a | n/a |
+| each pushback | 77 | 67 (87.0%) | 36 | 49 | 97.2% | 71.4% |
+| **k2w6 (default)** | 20 | 17 (85.0%) | 16 | 26 | 93.8% | 57.7% |
+| k3w8 | 8 | 6 (75.0%) | 7 | 16 | 100.0% | 43.8% |
+
+Firing on every pushback scores better on both session measures. The default is k2w6 anyway, and
+that is a product judgement, not a measured one: a single correction is already in the agent's
+context as the developer's own words, so a reflection on it mostly paraphrases them back, at an
+Opus call each time. Two within six turns is the first point at which "what does the agent keep
+missing?" has an answer. Whether the note changes the agent's next turns is not measured by any of
+this. That needs a session-level experiment with and without delivery, which no file here runs.
+
+**The judge changed model after it was measured.** 0.2 calls Claude Haiku 5.5 ($0.10 / $0.50 per
+MTok, against $1 / $5 for Haiku 4.5). Every number in this document is Haiku 4.5. The rubric is
+unchanged (fingerprint `c74d7145eb`), so `npx tsx bench/label.ts --runs h55,h55t` relabels the 837
+pairs for under a dollar, and `npm run bench:sim -- --run h55` repeats the replay. It has not been
+run yet.
+
+**Still open from §11.** The reference is still a model. The human review sheets are still empty.
+The corpus is still one developer's, two thirds of it not coding.
+

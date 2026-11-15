@@ -1,370 +1,127 @@
-# ARCHITECTURE.md — How reflect works
+# How reflect works
 
-> Honest technical reference. Every behavioral claim maps to a real
-> Claude Code mechanism (hook, rule, slash command) or a real Opus 4.7
-> API call. The metacognition framing is mnemonic; the implementation
-> is harness + single-shot LLM call.
+reflect 0.2 is a Claude Code plugin that watches how the developer responds to the agent. When two of the developer's messages in a short stretch are pushback (a correction, a rejection or a report that something is broken), a stronger model reads those turns and writes a short note. The agent receives the note before its next step.
 
----
+Everything runs from one TypeScript source tree in `src/`. `scripts/build-hook.mjs` bundles it into `hooks/reflect-hook.mjs`, which is committed, and the npm `reflect` bin is that same file. Nothing is kept between sessions, and nothing is written outside the project's `.reflect/` directory.
 
-## 1. The two layers
+## The hook flow
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  HARNESS LAYER (model-agnostic, survives model upgrades)           │
-│                                                                    │
-│  • Revert signal detection (3-tier taxonomy)                       │
-│  • Threshold + cooldown logic                                      │
-│  • Context assembly (3-layer cache plan)                           │
-│  • Guidance injection (filesystem write, path-scoped rule trigger) │
-│                                                                    │
-│  Implementation: TypeScript, no external deps beyond @anthropic-ai/sdk │
-└────────────────────────────────────────────────────────────────────┘
-                                ↓
-┌────────────────────────────────────────────────────────────────────┐
-│  MODEL LAYER (currently Opus 4.7, swappable)                       │
-│                                                                    │
-│  • Causal reasoning over assembled context                         │
-│  • Adaptive thinking (effort: high)                                │
-│  • Structured JSON output (validated by parser)                    │
-│                                                                    │
-│  Implementation: claude-opus-4-7 via Messages API                  │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-The harness is the **6-month-survival layer**. If Opus 5 ships in 2026-Q4
-and reduces over-refactoring directly, the harness still earns its place —
-the trigger + injection + cache patterns are not model-dependent.
-
----
-
-## 2. End-to-end signal flow
+`hooks/hooks.json` registers four hook commands, all of the form `node ${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs <mode>`. The dispatch is in `src/hook/main.ts`; what each mode does is in `src/hook/run.ts`.
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant CC as Claude Code
-    participant Hook as PostToolUse Hook
-    participant Reflect as reflect-trigger.sh
-    participant Utter as reflect-utterance.sh (UserPromptSubmit)
-    participant Core as opus-reflection.ts
-    participant API as Opus 4.7 API
-    participant Inject as guidance-injector.ts
-    participant Rule as Path-scoped Rule
-
-    User->>CC: ask for refactor
-    CC->>CC: Edit, Edit, Edit
-    User->>CC: revert (git restore)
-    CC->>Hook: PostToolUse(tool_name=Bash)
-    Hook->>Reflect: stdin JSON
-    Reflect->>Reflect: +100 cum_x100 (Tier 1)
-    Reflect-->>CC: exit 0 (no block)
-    User->>CC: "no wait" utterance
-    CC->>Utter: UserPromptSubmit(prompt)
-    Utter->>Utter: Tier 3 regex (+50 cum_x100)
-    Utter-->>CC: exit 0 (prompt unchanged)
-    CC->>CC: Edit (try again)
-    User->>CC: revert
-    CC->>Hook: PostToolUse(tool_name=Bash)
-    Hook->>Reflect: stdin JSON
-    Reflect->>Reflect: cum_x100 >= 240 (integer ×100, shell no bc)
-    Reflect->>Core: nohup spawn bin/reflect.ts trigger (out-of-process)
-    Reflect-->>CC: exit 0 (<=50ms; API call async)
-    Core->>Core: assemble 3-layer prompt (2 cache breakpoints: L1=1h, L2=5m)
-    Core->>API: messages.create(claude-opus-4-7, thinking.adaptive, output_config.effort=high, display=summarized)
-    API-->>Core: content[thinking summary, text JSON]
-    Core->>Core: parse text block (ignore thinking)
-    Core->>Inject: parsed reflection
-    Inject->>Inject: write .reflect/session-guidance.md
-    User->>CC: next request
-    CC->>Rule: load .claude/rules/reflect-rules.md (path-scoped)
-    Rule->>CC: includes session-guidance.md content
-    CC->>User: response (now informed by reflection)
+flowchart TD
+    M["Developer sends a message"] --> UPS{{"UserPromptSubmit"}}
+    UPS --> PR["prompt (sync)<br/>log the turn"]
+    UPS --> J["judge (async)<br/>Claude Code does not wait for it"]
+    J --> PAIR["Build the pair: what the agent did since the<br/>developer last spoke, plus this message"]
+    PAIR --> GATE{"Stage A gate:<br/>is there a prior agent turn?"}
+    GATE -- no --> SKIP["skip event, no API call"]
+    GATE -- yes --> JUDGE["Stage C judge: Claude Haiku 5.5,<br/>JSON-schema verdict"]
+    JUDGE --> V["verdict event"]
+    V --> PB{"pushback?"}
+    PB -- no --> DONE["done"]
+    PB -- yes --> ACC{"trigger, under a lock:<br/>2 pushbacks in 6 turns?"}
+    ACC -- no --> DONE
+    ACC -- yes --> REF["Claude Opus 5.5 reflection<br/>on the pushback turns only"]
+    REF --> G["guidance event and<br/>.reflect/session-guidance.md"]
+    G -. pending .-> T["PostToolUse: tool (sync)"]
+    G -. pending .-> PR
+    T --> CTX["additionalContext to the agent,<br/>delivered once"]
+    PR --> CTX
+    SS["SessionStart: session-start (sync)"] --> SS2["startup: prune old sessions<br/>compact or resume: re-deliver a note still in force"]
+    SS2 --> CTX
 ```
 
----
-
-## 3. Why PostToolUse, not PreToolUse
-
-| Hook | When | Use case |
-|---|---|---|
-| **PreToolUse** | Before tool runs | Block / ask / allow (e.g., stetkeep safety-net) |
-| **PostToolUse** | After tool returns | Observe / log / inject context |
-
-reflect is **observational** — it cannot block actions retroactively.
-PostToolUse fits because:
-1. Revert signals (`git restore`, `Edit` inversions) only become observable
-   after the tool runs
-2. We don't want to block — we want to *learn* from clustering
-3. PostToolUse can return `additionalContext` that lands in next-turn context
-4. Out-of-process — the hook process can't slow down Claude's loop
-
-### Non-blocking execution detail
-
-The hook script exits 0 in ≤50 ms after writing state. The actual Opus 4.7 API call is spawned via `nohup npx tsx bin/reflect.ts trigger … &` in the background (see `hooks/reflect-trigger.sh` and `hooks/reflect-utterance.sh`). Claude Code's tool loop never waits on reflection — guidance lands asynchronously via filesystem (`.reflect/session-guidance.md`) and is picked up by the path-scoped rule on the next turn's file read. This is why PostToolUse is safe for an LLM call that may take 2–5 s.
-
-stetkeep is the PreToolUse layer (prevention). reflect is the PostToolUse
-layer (reasoning). Intentional separation, not redundancy.
-
----
-
-## 4. The 3-tier revert signal taxonomy
-
-| Tier | Mechanism | Weight | Examples (v1 production hook) |
+| mode | event | runs | does |
 |---|---|---|---|
-| **1 (hard)** | Deterministic git operation | 1.0 | `git revert`, `git restore`, `git checkout HEAD --` |
-| **2 (inferred)** | File delete heuristic | 0.7 | `rm` / `unlink` of user file (build-artifact paths excluded: `node_modules\|dist\|build\|.next\|coverage`) |
-| **3 (soft)** | User utterance | 0.5 | Conservative negation regex in user message (UserPromptSubmit hook, not PostToolUse) |
+| `session-start` | SessionStart | sync, 10 s timeout | On `startup`, deletes session logs older than 7 days. On `compact` or `resume`, re-delivers guidance that is still in force. |
+| `prompt` | UserPromptSubmit | sync, 10 s timeout | Appends a `prompt` event and delivers any pending guidance. |
+| `judge` | UserPromptSubmit | `async: true` | Pair, gate, judge, trigger and, when it fires, the reflection. |
+| `tool` | PostToolUse | sync, 10 s timeout | Delivers pending guidance in the middle of a turn, before the agent's next edit. |
 
-**v1.1 roadmap — documented but not in production hook**:
-- `/undo`, `/rollback`, `/revert` slash commands (no hook currently matches these)
-- Tier 2 Edit→Edit semantic inversion same-path within 5 turns (reference impl in `src/revert-detector.ts::detectTier2`, not wired to shell threshold)
-- Tier 2 test→edit→test→edit thrash cycle (not detected)
+Every mode exits 0. A hook never blocks a prompt or a tool call; an exception becomes an `error` event in the session log and nothing else.
 
-**Trigger**: accumulated weight ≥ **240** (= 2.4 × 100, stored as integer `cum_x100` so the shell hook can add without `bc`). Each signal adds to `cum_x100` until the threshold fires, then resets. `revert-detector.ts` also implements a strict 10-call sliding window for tests; the production shell accumulator resets on fire and is simpler.
-**Cooldown**: 5 turns post-fire.
-**Tier 3 location**: utterance signals are evaluated on `UserPromptSubmit` by `reflect-utterance.sh`, not on `PostToolUse`. Both hooks write to the same `.reflect/state.json`.
+## One developer message, step by step
 
-Why these weights:
-- Tier 1 is unambiguous → full weight
-- Tier 2 has false positive risk (semantic inversion is heuristic) → partial
-- Tier 3 has highest false-positive risk (utterance ambiguity) → smallest
+This is `judgeTurn` in `src/hook/run.ts`.
 
-Why threshold 2.4 (not 3):
-- 3× tier-1 = 3.0 (clear trigger)
-- 2× tier-1 + 1× tier-3 = 2.5 (also triggers — strong signal)
-- 1× tier-1 + 2× tier-3 = 2.0 (does not trigger — too soft)
-- All-tier-3 (3 utterances) = 1.5 (does not trigger — utterance noise)
+1. **Budget and auth.** If the session has already spent its cap (`REFLECT_MAX_USD_PER_SESSION`, default $0.50) or an earlier call failed authentication, stop here.
+2. **Pair.** Read the last 8 MB of the Claude Code transcript and build the pair with `pairForPrompt` in `src/transcript/parse.ts`. This is the same transcript walker the benchmark used to build its corpus.
+3. **Gate.** `src/detect/structural.ts` has one hard rule: if there is no agent turn before this message (a session opener, or a second message sent before the agent replied), skip without calling anything.
+4. **Judge.** `src/detect/judge.ts` sends the pair to Claude Haiku 5.5 with a JSON-schema output format. The label is one of seven; `correction`, `rejection` and `failure_report` count as pushback, while `instruction`, `question`, `affirmation` and `other` do not. Thinking is off and effort is low.
+5. **Trigger.** `src/trigger/accumulator.ts` replays every verdict in the session through a sliding window counted in developer turns. The default policy `k2w6` fires on 2 pushbacks within 6 turns, then waits 3 turns before it can fire again. `REFLECT_POLICY` picks another: `each`, `k2w4`, `k2w8`, `k3w8` or `k2w6-med` (which ignores low-confidence verdicts).
+6. **Reflection.** `src/reflect/reflection.ts` sends exactly the turns that tripped the trigger to Claude Opus 5.5. Each turn carries a summary of what the agent had just done, the developer's words and the span the judge quoted as evidence. The call uses adaptive thinking at effort `high`, and the server-side fallback beta, so a refusal is retried on a fallback model inside the same request. The output schema (`src/reflect/schema.ts`) has `pattern`, `signal`, `adjustment`, `confidence`, `scope`, `false_trigger_likelihood`, `counter_hypothesis`, `verify` and `expires_after_turns` (3 to 12).
+7. **Delivery.** `src/reflect/format.ts` turns the reflection into at most 2,400 characters of `additionalContext`. The next `tool` or `prompt` hook hands it to the agent and records a `delivered` event, so it arrives once. A copy goes to `.reflect/session-guidance.md` for the developer.
 
-Tunable via env var `REFLECT_TRIGGER_THRESHOLD`.
+`reflect manual` and the `/reflect:brain-reflect` command do not wait for the trigger. They send the last N judged turns (default 6, at most 12) to the reflection model and tell it some of them may not be pushback. They do not check the spend cap.
 
----
+## Design decisions
 
-## 5. The 3-layer prompt cache plan
+### Judge the pair
 
-Anthropic prompt cache (2026-04 spec):
-- TTL options: 5m (default) or 1h
-- Min cacheable for Opus 4.7: **4,096 tokens** (not 1,024)
-- Max 4 explicit breakpoints per request
-- Hierarchy: tools → system → messages
-- 1h breakpoints must come **before** 5m breakpoints
+The same words can be an instruction or a correction depending on where they sit. "Don't touch the tests" at the start of a task is a guardrail; right after the agent edited a test file, it is a correction. So the judge sees the agent's previous turn (its last 14 tool calls with their targets, and the last 1,400 characters of what it said) next to the developer's message (up to 2,500 characters).
 
-Our layer plan:
+The benchmark tested this with a control that could have refuted it. With the agent's turn removed, the judge lost 10.3 F1 points, nearly all of it recall. With another pair's agent turn put in the same slot, it lost 27.6 (`bench/FINDINGS.md` §4). The interval on the 10.3 is wide, and the section says so.
 
-```
-┌───────── L1 STABLE (TTL 1h, ≥4096 tok) ────────┐
-│ • System prompt: "You are reflect..."           │
-│ • Role definition                               │
-│ • Output JSON schema                            │
-│ • Reasoning rubric                              │
-│ • Reflection examples (good / bad)              │
-│ Cached for ENTIRE session                       │  ← cache_control breakpoint #1 (1h)
-└──────────────────────────────────────────────────┘
+### Gate, then judge
 
-┌───────── L2 MEDIUM (TTL 5m, ~2000 tok) ────────┐
-│ • Active stetkeep rules                         │
-│ • Active CLAUDE.md constraints                  │
-│ • Session task summary (refreshed every 20 turns)│  ← cache_control breakpoint #2 (5m)
-│ • Last reflection (continuity, no persist)      │
-└──────────────────────────────────────────────────┘
+The judge costs money on every message, so a free check runs first. Stage A reads no words, which is why it works in any language. Only its hard rule is used in the hook: no prior agent turn means there is nothing to push back on. With that gate (θ 0) in front of a Claude Haiku 4.5 judge, the August benchmark measured 87.9% precision, 49.6% recall and 76.1% F0.5 per turn. The gate's softer scores, which would skip more calls, are computed but not used; the threshold that would apply them was chosen in-sample, and raising it lowered recall.
 
-┌───────── L3 EPHEMERAL (no cache, ~3000 tok) ───┐
-│ • Last 20 tool_use events as JSON               │
-│ • Rolled-back diff blob                         │
-│ • Trigger meta (signals, weights, timestamp)    │
-└──────────────────────────────────────────────────┘
-```
+On turns that follow code edits, the gate removes almost nothing (`bench/FINDINGS.md` §6). Its savings come from session openers and non-coding work.
 
-### Why 1h on L1
-- Default 5m insufficient: extended thinking sessions easily exceed 5 minutes
-- 1h write costs 2× input ($10/MTok) but reads at 0.1× ($0.50/MTok)
-- Break-even: ~2 reads to amortize 1h write
-- Typical session triggers ≥3 times — easy ROI
+### Wait for two pushbacks
 
-### Cost per trigger (measured D2)
-- Cold (first call, L1=4,741 tok): ≈ $0.0486 (≈ $0.095 theoretical without caching)
-- Warm (subsequent, L1 cache hit 95.9%): ≈ $0.0089 (≈ $0.038 average, L1 1h + L2 5m)
+A single correction is already in the agent's context, word for word, so a reflection on it adds little. Two inside a short window suggest something the agent is not seeing across turns, which is what an outside reader can name. Replaying the policies over the August sessions with the Haiku 4.5 verdicts (`bench/results/session-sim-prod.md`), `k2w6` fired 20 times; 17 of those fires (85.0%) were made of turns the reference labels also call pushback. It fired in 16 sessions, with session precision 93.8% and session recall 57.7%. That table was computed on the same data the default was chosen on.
 
-Measured figures summarised in [`docs/measurements.md`](docs/measurements.md). Theoretical figures in [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
+The 0.1 trigger summed weighted signals into an integer that never decayed and fired at 240. It fired zero times over 109 sessions in July (`evals/FINDINGS.md`).
 
-Math: [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
+### An outside model writes the reflection
 
----
+The agent being corrected is a poor judge of why. The reflection model sees only the pushback turns, without the rest of the session, and is asked for the cause they share. It must also give its best alternative reading (`counter_hypothesis`) and one cheap check the agent can run first (`verify`). When it reports low confidence or a high false-trigger likelihood, the note tells the agent to ask the developer before acting on the adjustment. Every note ends by saying the developer's own words in the current turn take precedence.
 
-## 6. Why adaptive thinking + effort: high
+Opus 5.5 is the default because it runs rarely: one reflection per fire, against a judge call on most messages.
 
-Opus 4.7 changed the thinking API:
-- ❌ `thinking: { budget_tokens: N }` — deprecated, returns 400
-- ✅ `thinking: { type: "adaptive" }` — model decides depth
-- ✅ `effort: "low" | "medium" | "high" | "xhigh" | "max"` — request-level intensity
+### Deliver once, then let it expire
 
-For reflection:
-- `effort: "high"` balances reasoning depth vs cost
-- `effort: "xhigh"` is the new starting point for "coding/agentic" — we evaluate
-  in ablations whether the marginal cost is justified for our task
+The note goes in through `additionalContext` on the first `tool` or `prompt` hook after it is written, and a `delivered` event stops it from being sent again. It stays "in force" for `expires_after_turns` developer turns. If Claude Code compacts or resumes the session in that window, `session-start` delivers it again, because compaction rewrites the context it was delivered into. After the window it is dropped. 0.1 wrote a markdown file and relied on a path-scoped rule to get the agent to read it.
 
-Note: `display` defaults to `"omitted"` on Opus 4.7. reflect sets `display: "summarized"` on every request (`src/opus-reflection.ts:71`) — the response then contains both a `thinking` summary block and a `text` JSON block. The parser at `src/opus-reflection.ts:107` scans for `type === "text"` and ignores the thinking block: the structured JSON is authoritative; the thinking summary surfaces in `REFLECT_DEBUG=1` output and future audit trails.
+### An append-only log per session
 
----
+State lives in `.reflect/sessions/<session_id>/events.jsonl`, one JSON line per event: `prompt`, `verdict`, `skip`, `fire`, `guidance`, `delivered` and `error`. Status, spend and pending guidance are all derived by reading the log back (`src/hook/state.ts`). 0.1 kept one JSON object per project and rewrote it from two hooks with `grep` and `sed`. PostToolUse fires once per parallel tool call, so those writers lost updates.
 
-## 7. Why no temperature / top_p / top_k
+The one step that reads, decides and writes is the trigger. It runs under an exclusive-create lock file (`fire.lock`, treated as stale after 120 s), so two judges finishing together cannot both fire on the same pattern. The reflection call itself runs outside the lock.
 
-Opus 4.7 rejects non-default sampling parameters with 400 errors. This is
-intentional — Anthropic recommends prompt-based control instead.
+`.reflect/` gets its own `.gitignore` containing `*` on first write. `reflect off` writes `.reflect/disabled`.
 
-For reflect, this is fine:
-- Reflection should be **deterministic-ish** (same context → similar output)
-- Default sampling is calibrated for adaptive thinking
-- Prompt structure (the JSON schema constraint) provides enough determinism
+### One bundled hook
 
-If we ever need diversity (e.g., generate multiple candidate reflections),
-we'd multi-call rather than tune sampling.
+A plugin install is a git clone: there is no `npm install` and no build step on the user's machine. So the hook ships as committed ES modules with the Anthropic SDK inside them, and the package has no runtime dependencies. The entry file is about 44 KB. The SDK sits in a chunk of about 1 MB under `hooks/lib/` that only the judge and the reflection import, so the `prompt`, `tool` and `session-start` hooks, which run on every message and tool call, never parse it. `npm run check:bundle` fails CI if the committed bundle does not match `src/`.
 
----
+0.1 had the same detector in five implementations (two bash hooks, two PowerShell hooks and a TypeScript reference), documented as divergent.
 
-## 8. Path-scoped rule injection
+## Credentials and spend
 
-Claude Code's `.claude/rules/*.md` files with `paths:` frontmatter auto-load
-when Claude reads matching files. We piggyback this:
+The key comes from, in order: `ANTHROPIC_API_KEY` in the environment, the project's `.env` (only `ANTHROPIC_API_KEY` and `REFLECT_*` are read from it, and they never override the environment), the plugin's `anthropic_api_key` setting, and then whatever the SDK finds on its own, such as an `ant auth login` profile. A Claude subscription login alone does not give the hooks an API key. If the judge fails authentication (a 401 or 403, or no key found), the hooks make no more API calls in that session.
 
-```markdown
----
-paths:
-  - "src/**/*.{ts,tsx,js,jsx,mjs,cjs}"
-  - "lib/**/*.ts"
-  - "app/**/*.tsx"
-  - "packages/**/*.{ts,tsx,js,jsx}"
----
+Each `verdict` and `guidance` event records its cost from `src/pricing.ts`; a model the table does not list is charged at the table's highest rate. The cap is checked before each judge call and again before each reflection, so only judge calls already in flight can take a session past it. Estimates are in [`docs/cost.md`](docs/cost.md).
 
-# reflect Session Guidance
+## Known limits
 
-The most recent reflection in this session is below. If
-`.reflect/session-guidance.md` exists, treat its contents as
-authoritative for the rest of this session.
+The measured numbers come from `bench/FINDINGS.md` (August 2026). §11 of that document lists its limits; these are the ones that matter for reading this page.
 
-<!-- session-guidance.md content auto-loaded by reflect when present -->
-```
+- **Measured with a different judge.** The benchmark ran Claude Haiku 4.5, and 0.2 ships Claude Haiku 5.5. A rerun with Haiku 5.5 is pending.
+- **The reference is a gold proxy.** Claude Opus 5 labelled the 837 turns. No human has checked them, so "precision" means agreement with Opus 5.
+- **One developer, one language pair.** The corpus is 224 sessions from one person writing in Korean and English. The precision and recall figures may not transfer.
+- **Duplicates.** The 837 rows hold 685 distinct prompts (the largest group is 30 identical automated health checks), so the effective sample is smaller than 837.
+- **Chosen in-sample.** The gate setting and the `k2w6` default were both picked on the rows that report the result.
+- **Main thread only.** Subagent transcripts were excluded from the benchmark.
+- **Detection only.** Whether a reflection makes the next turns better has not been tested.
 
-Mechanism reuse:
-- We don't invent a new context-injection primitive
-- We use stetkeep's path-scoped rule pattern (same as CRAFT/PERF rules)
-- The reflection lands when the user works on code (which is when it matters)
+Some limits are in the design itself:
 
----
+- Recall is about half. The judge's errors run one way: it reads corrections as instructions (`bench/FINDINGS.md` §9). That keeps false interruptions low, and it caps how many patterns reflect can see.
+- The gate cannot see a correction aimed at work from two turns back, for example a second message sent before the agent replied.
+- The judge runs asynchronously, so a note written after message N reaches the agent at its next tool call at the earliest, while it is already working on N.
+- Nothing persists across sessions. A pattern that recurs every session has to be found again each time; `scope: wider_concern` only suggests recording it in `CLAUDE.md`.
 
-## 9. Subagent option (deferred to v1.1)
-
-Currently reflect makes a **single Messages API call**. For v1.1, we evaluate
-delegating to a Claude Managed Agent:
-
-| Aspect | Single-shot Messages | Managed Agent |
-|---|---|---|
-| Cost (per call) | $0.04 (cached) | $0.04 + $0.08/session-hour |
-| Latency | 2-5s | 5-15s (cold start) |
-| State management | None (we handle) | Session log + checkpointing |
-| Multi-turn | No | Yes (could ask user follow-up) |
-| Fit for v1 | ✅ | Overhead unjustified |
-
-Decision: stay with Messages API for v1 — single-shot reflection is the explicit design, and Managed Agents would add session-hour overhead with no user-visible win. If v1.1 ships deep-reflect mode (multi-turn dialog), Managed Agents become attractive.
-
----
-
-## 10. Storage layout in user's project
-
-```
-user-project/
-├── .claude/
-│   ├── settings.json       # PostToolUse hook wired here
-│   └── rules/
-│       └── reflect-rules.md  # path-scoped, auto-loaded
-│
-├── .reflect/               # ⭐ ephemeral, gitignored
-│   ├── state.json          # session_id / turn_count / cum_x100 / cooldown_remaining
-│   ├── recent-calls.jsonl  # rolling last 20 tool calls + Tier 3 utterances
-│   ├── session-guidance.md # current reflection (overwritten on trigger)
-│   ├── trigger.log         # async background trigger invocation log
-│   └── session-log.jsonl   # opt-in, 168h auto-deleted
-│
-└── .env                    # ANTHROPIC_API_KEY
-```
-
-We refuse to write anywhere else. No cache in `~/.cache`. No telemetry.
-
----
-
-## 11. Failure modes & graceful degradation
-
-| Scenario | Behavior |
-|---|---|
-| `ANTHROPIC_API_KEY` missing | Hook exits 0 silently; logs to stderr |
-| API call fails (network / rate limit) | Single retry with 1s backoff, then silent skip |
-| Response not valid JSON | Parser logs error, no guidance written, no exception |
-| Cold-start (< 5 tool calls in session) | Trigger refuses, logs "context insufficient" |
-| Cache miss on L1/L2 | Re-write transparently, cost goes up for one call |
-| `.reflect/` directory unwritable | Log error to stderr, no guidance file created |
-| User sets `REFLECT_DISABLED=1` | Hook exits 0 immediately |
-
-**Hooks fail open.** Never block the user's tool from running.
-
----
-
-## 12. Validation — how to verify reflect works
-
-```bash
-# 1. Hook executes correctly
-echo '{
-  "tool_name":"Bash",
-  "tool_input":{"command":"git restore src/foo.ts"},
-  "tool_response":{"output":""}
-}' | bash .claude/hooks/reflect-trigger.sh
-# Expected (after enough signals): JSON with hookSpecificOutput
-
-# 2. Manual trigger
-npx reflect manual
-# Expected: reads session state, calls API, writes guidance
-
-# 3. Check guidance
-cat .reflect/session-guidance.md
-# Expected: pattern / signal / adjustment
-
-# 4. Cache hit verification
-REFLECT_DEBUG=1 npx reflect manual
-# Expected stderr: cache_read=6510 (or similar), cost=$0.038
-
-# 5. Cooldown verification
-REFLECT_DEBUG=1 npx reflect manual  # immediately after #4
-# Expected stderr: "in cooldown, 4 turns remaining"
-```
-
----
-
-## 13. What this is NOT
-
-- **Not a fix-all** — adjustment is a hypothesis, not a guarantee
-- **Not Anthropic-affiliated** — independent open source
-- **Not a replacement for code review** — it's a reasoning vector
-- **Not collecting data** — read [`PRIVACY.md`](PRIVACY.md)
-- **Not measured at scale yet** — ablations in [`experiments/`](experiments/),
-  full benchmark deferred to post-hackathon
-
----
-
-## 14. Related work
-
-- **stetkeep** ([github.com/chanjoongx/stetkeep](https://github.com/chanjoongx/stetkeep)) — PreToolUse safety net, false-positive catalog (CJ's prior work, base dep)
-- **TDD-Guard** ([nizos/tdd-guard](https://github.com/nizos/tdd-guard)) — closest mechanical pattern (separate Claude session for hook decisions). Different domain (TDD vs general metacognition)
-- **Cline** ([saoudrizwan/claude-dev](https://github.com/saoudrizwan/claude-dev)) — checkpoint timeline. Different mechanism (storage vs reflection)
-- **Aider** ([Aider-AI/aider](https://github.com/Aider-AI/aider)) — `/undo` + repo-map. Different mode (chat vs hook)
-- **Reflexion** (Shinn et al., 2023) — academic verbal-reflection pattern. Inspirational, not operational
-- **Anthropic Auto mode** ([blog](https://claude.com/blog/auto-mode)) — permission delegation. Composes with reflect (auto enables duration; reflect catches drift)
-
----
-
-## 15. Further reading
-
-- [`REFLECT.md`](REFLECT.md) — protocol spec, XML-tagged
-- [`docs/getting-started.md`](docs/getting-started.md) — install → first reflection in 10 min
-- [`docs/reflection-prompt-design.md`](docs/reflection-prompt-design.md) — why the prompt is shaped this way
-- [`docs/opus-4.7-best-practices.md`](docs/opus-4.7-best-practices.md) — adaptive thinking, sampling, cache details (2026-04 corrections)
-- [`docs/api-cost-economics.md`](docs/api-cost-economics.md) — breakeven math, cost projections
-- [`experiments/`](experiments/) — ablation results
+The 0.1 design documents are in [`docs/v0.1/`](docs/v0.1/README.md).

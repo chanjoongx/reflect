@@ -40,16 +40,16 @@ jobs:
           PKG_VER=$(node -p "require('./package.json').version")
           PLUGIN_VER=$(node -p "require('./.claude-plugin/plugin.json').version")
           LOCK_VER=$(node -p "require('./package-lock.json').version")
-          BIN_VER=$(grep -oP 'console\.log\("\K[0-9]+\.[0-9]+\.[0-9]+(?="\);)' bin/reflect.ts | head -1)
+          SRC_VER=$(grep -oP 'VERSION = "\K[0-9]+\.[0-9]+\.[0-9]+(?=")' src/version.ts | head -1)
           BUG_VER=$(grep -oP 'placeholder: "\K[0-9]+\.[0-9]+\.[0-9]+(?=")' .github/ISSUE_TEMPLATE/bug.yml | head -1)
           echo "package.json:      $PKG_VER"
           echo "package-lock.json: $LOCK_VER"
           echo "plugin.json:       $PLUGIN_VER"
-          echo "bin/reflect.ts:    $BIN_VER"
+          echo "src/version.ts:    $SRC_VER"
           echo "bug.yml:           $BUG_VER"
-          for V in "$LOCK_VER" "$PLUGIN_VER" "$BIN_VER" "$BUG_VER"; do
+          for V in "$LOCK_VER" "$PLUGIN_VER" "$SRC_VER" "$BUG_VER"; do
             if [ "$V" != "$PKG_VER" ]; then
-              echo "FAIL: version mismatch — expected $PKG_VER, got $V"
+              echo "FAIL: version mismatch: expected $PKG_VER, got $V"
               exit 1
             fi
           done
@@ -64,14 +64,14 @@ jobs:
             exit 1
           fi
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Typecheck and unit tests
+        run: npm test
 
-      - name: Mirror-check (commands/agents/hooks must match .claude/ mirror)
-        run: npm run mirror-check
+      - name: Committed hook bundle matches src/ (publish exactly what the plugin installs)
+        run: npm run check:bundle
 
-      - name: Build dist/
-        run: npm run build
+      - name: Bundle smoke test
+        run: npm run smoke
 
       - name: Publish to npm with provenance
         # --provenance uses GitHub OIDC token to generate SLSA v1 attestation,

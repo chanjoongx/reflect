@@ -27,7 +27,7 @@ comparable to a published benchmark: `correction` · `rejection` · `failure_rep
 ## Run it
 
 ```bash
-npm run bench          # extract -> score -> report   (no API calls, uses cached labels)
+npm run bench          # score -> report -> session replay (no API calls, uses cached labels)
 npm run bench:label    # the API step (costs money — see below)
 npm run bench:review   # export human-review sheets
 npx tsx bench/verify.ts   # independent recomputation of the headline numbers
@@ -41,6 +41,7 @@ Step by step:
 | `bench:label` | five judge runs → `data/labels.jsonl` (resumable, fingerprinted) | **yes** |
 | `bench:score` | → `results/report.md` + `results/results.json` | no |
 | `bench:report` | → `results/workbench.html` | no |
+| `bench:sim` | replays the trigger policies over cached verdicts → `results/session-sim-<run>.md` | no |
 | `bench:review` | → `data/review-*.md` for human marking | no |
 | `verify.ts` | recomputes the numbers independently and asserts they match | no |
 
@@ -49,6 +50,9 @@ only spends on what is missing. The fingerprint is not decoration: keyed on `(ru
 a cache accumulated across a day of rubric edits silently mixed verdicts from different
 annotators — 710 duplicated keys, 31 of which disagreed on the label, with ground truth decided by
 which line was appended last. A rubric change is now a cache miss, not a contamination.
+
+`npm run bench` no longer re-extracts: `data/pairs.jsonl` may be the only copy of a corpus whose
+transcripts Claude Code has since deleted, so `bench:extract` refuses to overwrite it without `--force`.
 
 A full five-run pass over ~840 pairs costs about **$25** and takes ~30 minutes at concurrency 14.
 Smoke-test first:

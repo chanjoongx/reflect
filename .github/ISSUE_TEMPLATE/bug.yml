@@ -6,20 +6,20 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. For security vulnerabilities, do **not** use this form — see `SECURITY.md`.
+        Thanks for reporting. For security vulnerabilities, do **not** use this form; see `SECURITY.md`.
   - type: input
     id: version
     attributes:
       label: reflect version
-      description: Output of `npx reflect --version`
-      placeholder: "0.1.4"
+      description: Output of `reflect --version` (or `npx @chanjoongx/reflect --version`)
+      placeholder: "0.2.0"
     validations:
       required: true
   - type: input
     id: claude-code-version
     attributes:
       label: Claude Code version
-      placeholder: "e.g. 2.3.1"
+      placeholder: "e.g. 2.1.325"
     validations:
       required: true
   - type: dropdown
@@ -29,8 +29,8 @@ body:
       options:
         - macOS
         - Linux
-        - Windows (PowerShell)
-        - Windows (Git Bash / WSL)
+        - Windows
+        - WSL
         - Other
     validations:
       required: true
@@ -44,7 +44,7 @@ body:
     id: actual
     attributes:
       label: What actually happened
-      description: Include exact error messages and the output of `npx reflect status` if relevant.
+      description: Include exact error messages and the output of `reflect status` if relevant.
     validations:
       required: true
   - type: textarea
@@ -54,18 +54,16 @@ body:
     validations:
       required: true
   - type: textarea
-    id: hook-output
+    id: doctor
     attributes:
-      label: Hook output (if hook-related)
-      description: |
-        For PostToolUse hook bugs:
-        ```
-        echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"test"}' | bash .claude/hooks/reflect-trigger.sh
-        ```
+      label: "`reflect doctor` output"
+      description: Run it in the project where the problem happens.
       render: shell
   - type: textarea
-    id: state
+    id: events
     attributes:
-      label: ".reflect/state.json contents"
-      description: Redact session_id if private.
+      label: "Relevant lines from .reflect/sessions/<session>/events.jsonl"
+      description: |
+        The "skip" and "error" lines usually explain a silent hook. These lines can contain your
+        messages (already redacted for keys, emails and home paths); remove anything else private.
       render: json

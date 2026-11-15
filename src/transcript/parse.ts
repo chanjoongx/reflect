@@ -176,8 +176,10 @@ export function stripWrappers(s: string): string {
 
   // 3. explicit non-hyphenated harness tags
   for (const tag of EXTRA_WRAPPER_TAGS) {
-    out = out.replace(new RegExp(`<${tag}>[\s\S]*?</${tag}>`, "g"), " ");
-    out = out.replace(new RegExp(`<${tag}\s*/>`, "g"), " ");
+    // In a template literal "\s" is just "s": the backslashes must be doubled
+    // (until 2026-11-16 they were not, and IDE blocks reached the judge).
+    out = out.replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "g"), " ");
+    out = out.replace(new RegExp(`<${tag}\\s*/>`, "g"), " ");
   }
 
   // 4. A leading UNCLOSED injection block (transcript truncation). This deletes
@@ -364,27 +366,50 @@ export function shortHash(s: string): string {
   return ((h1 ^ h2) >>> 0).toString(16).padStart(8, "0").slice(0, 6);
 }
 
-export function parseSessionFile(
-  file: string,
-  project: string,
-  opts: { sidechain?: boolean; idSuffix?: string } = {},
-): SessionPairs | null {
+export interface WalkOptions {
+  sidechain?: boolean;
+  idSuffix?: string;
+  /** Session id to use when the transcript carries none. */
+  fallbackId?: string;
+  /** Pair-id stem when the transcript carries no sessionId (defaults to fallbackId). */
+  pairIdFallback?: string;
+  project?: string;
+}
+
+/** The assistant turn still open at the end of a transcript: what the next prompt answers. */
+export interface PendingTurn {
+  prior: PriorTurn | null;
+  recentTargets: string[];
+  promptIndex: number;
+}
+
+export interface WalkResult {
+  sessionId: string;
+  pairs: Pair[];
+  toolCallCount: number;
+  droppedHarness: number;
+  pending: PendingTurn;
+}
+
+/**
+ * The one transcript walker. `parseSessionFile` (the benchmark) and
+ * `pairForPrompt` (the live hook) both go through it, so the hook judges
+ * exactly the pair shape the benchmark measured.
+ */
+export function walkTranscript(raw: string, opts: WalkOptions = {}): WalkResult {
   const wantSidechain = opts.sidechain === true;
   // `sessionId:promptIndex` is NOT unique: a session that outlives a project
   // directory rename is written into two project folders under the same id, so
   // two entirely different prompts collide on `<session>:0`. Measured once in
-  // 836 pairs — small, but it silently attaches one prompt's label to another,
+  // 836 pairs, small, but it silently attaches one prompt's label to another,
   // which is the kind of error that stays invisible while it scales. The
   // caller passes a suffix for exactly the sessions where that happens; ids
   // for unambiguous sessions are left untouched so an existing label cache
   // stays valid.
   const suffix = opts.idSuffix ? `:${opts.idSuffix}` : "";
-  let raw: string;
-  try {
-    raw = readFileSync(file, "utf8");
-  } catch {
-    return null;
-  }
+  const fallbackId = opts.fallbackId ?? "session";
+  const pairIdFallback = opts.pairIdFallback ?? fallbackId;
+  const project = opts.project ?? "";
 
   const pairs: Pair[] = [];
   let sessionId = "";
@@ -424,7 +449,7 @@ export function parseSessionFile(
       // `endedAt` is the last time the ASSISTANT spoke, not the last event of
       // any kind. Letting dropped harness traffic (background-task
       // notifications, `!` command echoes) advance it made `gapSeconds`
-      // measure the wrong interval in 26 of 573 real prompts — median 173 s
+      // measure the wrong interval in 26 of 573 real prompts: median 173 s
       // understated, worst case 17.8 hours, and 7 prompts flipped from
       // `staleGap` to `fastReply`, a 0.75-logit swing on a scored feature.
       if (ev.timestamp) curEndedAt = ev.timestamp;
@@ -437,7 +462,7 @@ export function parseSessionFile(
     const rawText = userPromptText(ev);
 
     if (rawText === null) {
-      // tool-result carrier or meta — mark errors on the in-flight turn
+      // tool-result carrier or meta: mark errors on the in-flight turn
       if (toolResultErrored(ev) && curCalls.length) {
         const id = erroredToolUseId(ev);
         const target = id ? curCalls.find((c) => c.id === id) : undefined;
@@ -451,7 +476,7 @@ export function parseSessionFile(
     const prompt = stripWrappers(rawText);
     if (prompt.length < MIN_PROMPT_CHARS || isBookkeeping(prompt)) {
       // Pure harness traffic (task notification, `!` command echo, hook
-      // preamble with no prose). Not a user turn — the assistant turn stays
+      // preamble with no prose). Not a user turn: the assistant turn stays
       // open so the next real prompt sees everything done since the human
       // last spoke.
       droppedHarness++;
@@ -465,8 +490,8 @@ export function parseSessionFile(
     const recentTargets = turnTargets.flat();
 
     pairs.push({
-      pairId: `${sessionId || basename(file)}${suffix}:${promptIndex}`,
-      sessionId: sessionId || basename(file, ".jsonl"),
+      pairId: `${sessionId || pairIdFallback}${suffix}:${promptIndex}`,
+      sessionId: sessionId || fallbackId,
       project,
       promptIndex,
       prompt,
@@ -486,16 +511,82 @@ export function parseSessionFile(
     sawAnyTurn = false;
   }
 
-  if (pairs.length === 0) return null;
-
   return {
-    sessionId: sessionId || basename(file, ".jsonl"),
+    sessionId: sessionId || fallbackId,
+    pairs,
+    toolCallCount,
+    droppedHarness,
+    pending: {
+      prior: sawAnyTurn ? { text: curText, toolCalls: curCalls, endedAt: curEndedAt } : null,
+      recentTargets: turnTargets.flat(),
+      promptIndex,
+    },
+  };
+}
+
+export function parseSessionFile(
+  file: string,
+  project: string,
+  opts: { sidechain?: boolean; idSuffix?: string } = {},
+): SessionPairs | null {
+  let raw: string;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+  const w = walkTranscript(raw, {
+    ...opts,
+    project,
+    fallbackId: basename(file, ".jsonl"),
+    // Kept for label-cache stability: a transcript with no sessionId has
+    // always had pairIds built from the file name WITH its extension.
+    pairIdFallback: basename(file),
+  });
+  if (w.pairs.length === 0) return null;
+  const pairs = w.pairs;
+  return {
+    sessionId: w.sessionId,
     project,
     file,
     pairs,
     promptCount: pairs.length,
-    toolCallCount,
-    droppedHarness,
+    toolCallCount: w.toolCallCount,
+    droppedHarness: w.droppedHarness,
+  };
+}
+
+/**
+ * The pair a live prompt forms with what the agent did just before it.
+ *
+ * Called from the UserPromptSubmit hook. Whether the transcript already holds
+ * the prompt being submitted depends on when Claude Code flushes it, so both
+ * orders are handled: if the last recorded user turn IS this prompt and nothing
+ * has happened since, its recorded pair is the answer; otherwise the turn still
+ * open at the end of the file is.
+ */
+export function pairForPrompt(
+  raw: string,
+  prompt: string,
+  opts: { sessionId: string; promptAt?: string | null; project?: string },
+): Pair {
+  const w = walkTranscript(raw, {
+    fallbackId: opts.sessionId,
+    ...(opts.project !== undefined ? { project: opts.project } : {}),
+  });
+  const clean = stripWrappers(prompt);
+  const last = w.pairs[w.pairs.length - 1];
+  if (last && w.pending.prior === null && last.prompt === clean) return last;
+  return {
+    pairId: `${w.sessionId}:${w.pending.promptIndex}`,
+    sessionId: w.sessionId,
+    project: opts.project ?? "",
+    promptIndex: w.pending.promptIndex,
+    prompt: clean,
+    promptAt: opts.promptAt ?? null,
+    prior: w.pending.prior,
+    recentTargets: w.pending.recentTargets,
+    sidechain: false,
   };
 }
 

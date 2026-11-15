@@ -19,8 +19,10 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const RE = (source: string, flags?: string) => new RegExp(source, flags);
 
-const RESUME_MARKER = "resume_" + "chanj" + "oong";
-const LEGACY_TICKET = "21547398" + "2749776";
+// Assembled at run time: a bundler folds "a" + "b" into one literal, which would put
+// the very strings these patterns exist to hide into hooks/lib/ (found 2026-11-16).
+const RESUME_MARKER = ["resume_", "chanj", "oong"].join("");
+const LEGACY_TICKET = ["21547398", "2749776"].join("");
 
 const PII_PATTERNS: Array<{ re: RegExp; replacement: string }> = [
   // Local file paths

@@ -3,7 +3,7 @@
 > **Result: the shipped detector fired 0 times. Not once. Across 17,180 tool calls
 > and 2,275 user prompts.**
 >
-> This document is the follow-up that [`experiments/ablation-with-without.md`](../experiments/ablation-with-without.md)
+> This document is the follow-up that [`docs/v0.1/experiments/ablation-with-without.md`](../docs/v0.1/experiments/ablation-with-without.md)
 > said it could not run in April, run now against a corpus that did not exist then.
 
 **Date:** 2026-07-15 · **Harness:** [`evals/replay_history.py`](./replay_history.py) · **Reproduce:**
@@ -14,7 +14,7 @@
 ## 1. Why this, and why not the ablation
 
 In April I designed a with/without ablation and then killed it. The decision-log
-([ablation-with-without.md](../experiments/ablation-with-without.md)) gave three reasons; the third
+([ablation-with-without.md](../docs/v0.1/experiments/ablation-with-without.md)) gave three reasons; the third
 still holds and always will:
 
 > *"N=2 self-experiment on one's own tool is unfalsifiable. Positive → suspected bias.
@@ -211,7 +211,7 @@ Sendbird's own ZTI post makes the point better than I can:
 > 마스터한 것이지 고객 응대를 마스터한 게 아니다."*
 
 reflect passed its own design review, its own cost model, its own cache-eligibility analysis —
-every number in [`docs/measurements.md`](../docs/measurements.md) is real and was measured
+every number in [`docs/v0.1/measurements.md`](../docs/v0.1/measurements.md) is real and was measured
 against the live API. And it fired **zero times** in three months of actual use.
 
 **I measured everything about the call I was making, and nothing about whether I was making it.**

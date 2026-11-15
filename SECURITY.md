@@ -4,7 +4,8 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.x | ✅ |
+| 0.2.x | Yes |
+| 0.1.x | No (its detector is retired; upgrade to 0.2) |
 
 ## Reporting a vulnerability
 
@@ -12,7 +13,7 @@ Email **cj@chanjoongx.com** with a subject starting with `[security]`. Include:
 
 - A clear description of the vulnerability
 - Steps to reproduce (or a minimal proof of concept)
-- The affected version (`npm view @chanjoongx/reflect version` or git commit SHA)
+- The affected version (`reflect version`, or the git commit SHA)
 - Your preferred disclosure timeline
 
 You will receive an acknowledgment within **72 hours**. Critical issues are patched with priority; we aim to publish a fix within 14 days of acknowledgment when feasible.
@@ -21,22 +22,24 @@ Please do **not** open public GitHub issues for security reports until a fix is 
 
 ## Runtime attack surface
 
-- **Single external dependency**: `@anthropic-ai/sdk` (official Anthropic SDK)
-- **One additional dependency**: `stetkeep` (CJ's other MIT npm package, used for path-scoped rule loading)
-- **No network calls** beyond the single Opus 4.7 Messages API call per reflection
-- **Hooks are shell scripts** — review `hooks/reflect-trigger.sh` and `hooks/reflect-trigger.ps1` before adopting. They read JSON from stdin, detect signal patterns, write to `.reflect/state.json`, and may invoke `bin/reflect.ts` in background. They do not modify files outside `.reflect/`.
+- **No runtime dependencies**: the official Anthropic SDK (`@anthropic-ai/sdk`) is bundled into `hooks/lib/`. Licenses of everything bundled are in `hooks/THIRD_PARTY_LICENSES.txt`.
+- **No network calls** beyond the Anthropic Messages API: one judge call (Claude Haiku 5.5) per judged developer message, and one reflection call (Claude Opus 5.5 by default) when the trigger fires or you run `/reflect:brain-reflect`
+- **The hooks are one Node.js bundle**: `hooks/reflect-hook.mjs`, built from `src/` by `scripts/build-hook.mjs`. CI fails if the committed bundle does not match the source. The hooks read JSON from stdin and the session transcript Claude Code points them to, and write only under `.reflect/` in the project. They never block a prompt or a tool call. Review `src/hook/run.ts` before adopting.
 
 ## Data sent to Anthropic
 
-When a reflection fires, the following is sent to the Anthropic API:
-- 3-layer prompt (system + active rules + recent tool calls + diff)
-- Recent tool call summaries (long string fields truncated)
-- Active rule files (CLAUDE.md, .claude/rules/*.md content)
+For each judged message, the following is sent to the Anthropic API:
+- The developer's message (up to 2,500 characters)
+- A summary of the agent's previous turn: its last 14 tool calls with their file or command targets, and the last 1,400 characters of what it said
+
+When a reflection runs, it sends the turns that triggered it: for each, the agent-turn summary (up to 1,500 characters), the developer's message (up to 1,500 characters) and the span the judge quoted as evidence.
+
+Before anything is sent, `src/redact.ts` replaces home directory paths, email addresses at common providers, phone numbers and common API key and token formats with placeholders. A secret in some other format that appears in a message or in the agent's text would be sent as is.
 
 NOT sent:
-- Files outside the project root
-- API keys, secrets, environment variables (unless they appear in tool calls — sanitize via stetkeep PreToolUse hook)
-- Historical session data (each call is independent)
+- File contents, except what appears in the developer's message or the agent's visible text
+- Environment variables (the API key travels only in the request's authentication header)
+- Data from other sessions (each call is independent)
 
 See [`PRIVACY.md`](PRIVACY.md) for full data handling.
 
@@ -47,17 +50,17 @@ In scope for security reports:
 - API key leakage through filesystem or network
 - Hooks that modify files outside the declared `.reflect/` directory
 - Injection attacks through hook input parsing
-- Cache poisoning or guidance file manipulation by external process
+- Tampering with `.reflect/` state by an external process (the hooks hand guidance from it to the agent)
 
 Out of scope:
-- Behavioral outcomes of Opus 4.7 (model errors are not reflect vulnerabilities)
+- Behavioral outcomes of the Claude models reflect calls (model errors are not reflect vulnerabilities)
 - Deliberate user actions (e.g., `git commit --no-verify` bypassing pre-commit)
 - Theoretical weaknesses in upstream Anthropic infrastructure
 
 ## Best practices for users
 
-- Store `ANTHROPIC_API_KEY` only in `.env` (never commit)
+- Prefer the plugin's API key setting, which Claude Code keeps in your system's credential store. If you use a project `.env` instead, never commit it
 - Verify `.env` is gitignored (`git check-ignore .env`)
 - Rotate API key on any suspected exposure
-- For team use, each member uses own key — never share
-- Pre-commit PII scanner is included — verify it's installed and executable
+- For team use, each member uses their own key. Never share one
+- Run `reflect doctor` to confirm `.reflect/` is ignored by git

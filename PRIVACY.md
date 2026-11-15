@@ -1,65 +1,50 @@
-# Privacy Policy
+# Privacy
 
-**Last updated: 2026-04-21**
+**Last updated: 2026-11-16, for reflect 0.2.0**
 
-## Summary
+reflect runs on your machine as Claude Code hooks and a command-line tool. It has no server, no account, no telemetry and no analytics. The only network calls it makes go to the Anthropic API, with your own API key, and are billed to that key.
 
-reflect does not collect, store, or transmit any user data beyond a single, on-demand Opus 4.7 API call per triggered reflection. All operations run on your machine.
+0.2 sends more than 0.1 did. 0.1 called the API only when its trigger fired, which in practice was never. 0.2 sends one small request for each message you type after the agent's first reply.
 
-## What reflect does
+## What is sent to Anthropic, and when
 
-reflect is a local Node.js CLI + Claude Code hook + plugin manifest. When triggered (revert signal cluster), it:
-1. Reads recent tool calls + diff + active rules from local files
-2. Calls the Anthropic Messages API with this payload (single API call)
-3. Writes the structured response to `.reflect/session-guidance.md`
-4. Optionally appends to `.reflect/session-log.jsonl` if `REFLECT_LOG_ENABLED=1`
+**Each judged message** (Claude Haiku 5.5). Sent for every message you type in a session, except the first one and any message that does not follow an agent turn:
 
-That's it. No telemetry, no analytics, no background sync, no cross-machine sharing.
+- your message, cut to 2,500 characters;
+- a summary of the agent's turn just before it: the names of its last 14 tool calls with the file or command each one touched (each cut to 120 characters), whether each changed a file or failed, and the last 1,400 characters of what the agent said.
 
-## Data sent to Anthropic
+**Each reflection** (Claude Opus 5.5 by default, or the model you configure). Sent only when the trigger fires, or when you run `/reflect:brain-reflect` or `reflect manual`:
 
-Per Opus 4.7 reflection call:
-- The 3-layer prompt (system + session context + trigger payload)
-- Recent tool call summaries (long string fields truncated to 200 chars)
-- Active rule files (CLAUDE.md and .claude/rules/*.md contents)
-- Rolled-back diff (when applicable)
+- the developer turns that triggered it (up to 12), each with your message and the summary of the agent's turn before it, each cut to 1,500 characters;
+- the short phrase the judge quoted as evidence for each one.
 
-This data is governed by Anthropic's privacy policy: https://www.anthropic.com/legal/privacy
+Before either request leaves your machine, reflect replaces these with placeholders: home directory paths (`C:\Users\<you>`, `/Users/<you>`, `/home/<you>`), email addresses, phone numbers, Anthropic, GitHub, npm, Hugging Face, Slack and AWS keys, and private key blocks. The replacement is pattern matching, so a secret in an unusual format can get through. Do not paste secrets into a Claude Code prompt.
 
-## Data NOT sent
-- Files outside the project root
-- API keys, secrets, environment variables (unless they appear in tool calls — use stetkeep PreToolUse to sanitize)
-- Historical session data from previous sessions
-- Personal identifiers beyond what's in the project files
+reflect never reads your source files. It sees file names only as they appear in the agent's tool calls in the session transcript.
 
-## Local data storage
+The requests are governed by Anthropic's terms for your API key and its privacy policy: https://www.anthropic.com/legal/privacy
 
-reflect writes to:
-- `.reflect/state.json` — session state (signal counts, cooldown). Reset on new session.
-- `.reflect/session-guidance.md` — current reflection. Overwritten on next trigger. Deleted on session end.
-- `.reflect/session-log.jsonl` — opt-in only (`REFLECT_LOG_ENABLED=1`). Auto-deleted after 168 hours.
-- `.reflect/trigger.log` — debug log of background invocations. User can delete anytime.
+## What is stored on your machine
 
-All within your project directory. Nothing is stored elsewhere.
+Everything is under `.reflect/` in the project:
 
-## Third-party services
+| file | contents | removed |
+|---|---|---|
+| `.reflect/sessions/<session>/events.jsonl` | one line per event: each message's length and verdict, the judged message (redacted, up to 1,500 characters) and the agent-turn summary, the reflection, costs, errors | when a new session starts and the session is more than 7 days old |
+| `.reflect/session-guidance.md` | the latest reflection, for you to read | overwritten by the next one |
+| `.reflect/.gitignore` | `*`, so none of this is committed | |
+| `.reflect/disabled` | present only after `reflect off` | `reflect on` |
 
-- **Anthropic API** — for the Opus 4.7 reflection call. Required.
-- **stetkeep** (npm package, CJ's other MIT project) — local-only library. No network.
-- **No analytics / tracking** services.
+reflect writes nothing outside `.reflect/`. Delete the folder at any time; reflect starts fresh.
 
-## Cookies, tracking, advertising
+## Credentials
 
-None. reflect is a CLI / Node library — no web component.
+reflect looks for a key in this order: `ANTHROPIC_API_KEY` in the environment, `ANTHROPIC_API_KEY` in the project's `.env` file, the plugin's API key setting (which Claude Code keeps in your system's credential store), then whatever the Anthropic SDK finds on its own, such as an `ant auth login` profile. From `.env` it reads only `ANTHROPIC_API_KEY` and `REFLECT_*` lines. It never prints, logs or stores a key.
 
-## Children's privacy
+## Turning it off
 
-Not applicable. reflect is a developer tool with no minor-targeted functionality.
+`reflect off` in a project, or `REFLECT_DISABLED=1` in the environment, makes every hook exit without reading anything or calling the API. Disabling or uninstalling the plugin in Claude Code removes the hooks.
 
 ## Contact
 
-For privacy questions, email **cj@chanjoongx.com** or open an issue at https://github.com/chanjoongx/reflect/issues.
-
-## Changes
-
-Any future changes to this policy will be committed to this file. Check git history for revisions.
+Email cj@chanjoongx.com or open an issue at https://github.com/chanjoongx/reflect/issues. Changes to this policy are committed to this file; its git history is the record.

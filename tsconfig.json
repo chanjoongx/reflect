@@ -28,6 +28,6 @@
 
     "types": ["node"]
   },
-  "include": ["bin/**/*.ts", "src/**/*.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "build", "**/*.test.ts", "experiments/**", "hackathon/**", "src/example/**"]
 }

@@ -2,210 +2,152 @@
 
 # reflect
 
-### *A session-local metacognition harness for long-running Claude Code work.*
+**A Claude Code plugin that notices when you keep pushing back on the agent, works out why, and tells the agent before its next step.**
 
-**When your suggestions get reverted 3+ times within 10 tool calls, Opus 4.7 reads back recent tool calls + active rules + rolled-back diff, reasons about *why*, and injects guidance into the next turn.**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-A78BFA.svg)](https://opensource.org/licenses/MIT)
-[![Built for](https://img.shields.io/badge/Built%20for-Claude%20Code-D4A27F)](https://claude.com/claude-code)
-[![Powered by](https://img.shields.io/badge/Powered%20by-Opus%204.7-5FE5D4)](https://www.anthropic.com/claude/opus)
-[![Hackathon](https://img.shields.io/badge/Built%20with-Opus%204.7%20Hackathon-7AB7FC)](https://cerebralvalley.ai/e/built-with-4-7-hackathon)
+[![License: MIT](https://img.shields.io/badge/License-MIT-A78BFA.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@chanjoongx/reflect?color=D4A27F)](https://www.npmjs.com/package/@chanjoongx/reflect)
+[![CI](https://github.com/chanjoongx/reflect/actions/workflows/ci.yml/badge.svg)](https://github.com/chanjoongx/reflect/actions/workflows/ci.yml)
 
 </div>
 
----
-
-## What is reflect?
-
-You let Claude Code run for hours in auto mode. It does great work — and somewhere around hour two, it starts repeating the same misjudgment. You revert. It tries again. You revert.
-
-reflect catches that cluster. When ≥3 revert signals appear within 10 tool calls (weighted threshold: 3 hard reverts = 3.0, or 2 hard + 1 utterance = 2.5, crosses the 2.4 cutoff), reflect hands recent history to Opus 4.7 and gets back one structured reflection — `pattern`, `signal`, `adjustment`, `confidence` — written to `.reflect/session-guidance.md`. Your next turn reads it via path-scoped rule injection and adjusts.
-
-Session-local. No persistence. No team sync. No telemetry. The file is deleted at session end.
-
----
-
-## How it works
-
-Two hooks watch for three tiers of revert signal. `PostToolUse` catches Tier 1 (`git revert`, `git restore`, `git checkout HEAD --` — weight 1.0) and Tier 2 (`rm`/`unlink` of a user file, build-artifact paths excluded — weight 0.7). `UserPromptSubmit` catches Tier 3 (utterance negation like "no wait", "undo that" — weight 0.5). Weights accumulate as `cum_x100` (integer × 100, so shell arithmetic needs no `bc`). When cumulative weight crosses 240, a single-shot Opus 4.7 call fires; the hook exits in ≤50 ms while the API call runs in the background via `nohup`.
-
-```mermaid
-flowchart LR
-  A[Tool call] --> H{Revert signal?}
-  U[User prompt] --> H2{Utterance negation?}
-  H -->|T1 +100 or T2 +70| S[cum_x100 += weight]
-  H2 -->|T3 +50| S
-  S --> D{cum_x100 ≥ 240?}
-  D -->|no| E[exit 0]
-  D -->|yes| R[nohup bin/reflect.ts trigger]
-  R --> P[3-layer prompt<br/>L1 1h · L2 5m · L3 ephemeral]
-  P --> API[claude-opus-4-7<br/>thinking.adaptive<br/>output_config.effort=high]
-  API --> G[.reflect/session-guidance.md]
-  G -. path-scoped rule auto-load .-> N[Next turn adjusts]
+```
+/plugin install reflect --marketplace chanjoongx/reflect
 ```
 
-<details>
-<summary>Static SVG version of the diagram above — for npm.com and other viewers that don't render Mermaid</summary>
-
-![Reflect signal flow](docs/diagrams/architecture.svg)
-
-</details>
-
-Cold call ≈ $0.05 (measured D2) · warm call ≈ $0.01 (measured D2, 95.9% L1 cache hit) · latency 5–6 s, non-blocking. Detailed architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md). Protocol spec: [`REFLECT.md`](REFLECT.md). Cost math: [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
-
 ---
+
+## Why 0.2 exists
+
+I built reflect 0.1 in April 2026 at the Built with Opus 4.7 hackathon. It counted `git revert`, `git restore`, deleted files and English phrases like "no wait", and when the count passed a threshold it asked Opus 4.7 why the session was going wrong.
+
+Then I measured it on my own work. Across 109 real sessions in July it fired zero times. In August I pulled 837 developer turns from 224 sessions and had Claude Opus 5 label them; 141 were pushback on the agent. The shipped detector caught none of them.
+
+People rarely push back with git. They type "only the parser, please" or "that's not what I asked", often in their own language, right after the agent did something. The signal is in the relation between what the agent just did and what you say next, and 0.1 looked at neither. The full write-up is in [`bench/FINDINGS.md`](bench/FINDINGS.md).
+
+0.2 is rebuilt around that pair.
+
+## What it does
+
+1. **Judges each message.** For every message you send after the agent's first reply, reflect reads the agent's previous turn from the session transcript (its tool calls and its last words) and asks Claude Haiku 5.5 one question: is this message a correction, a rejection or a failure report, or is it a normal instruction or question? This runs as a background hook and does not hold up your prompt.
+2. **Waits for a pattern.** One pushback is normal. When two land within six of your messages, Claude Opus 5.5 reads exactly those turns and writes a short note: what the agent keeps doing, what your pushback is about, what to change for the next few turns, and how the note could be wrong.
+3. **Tells the agent once.** The note arrives as hook context on the agent's next tool call or your next prompt. It stays in force for 3 to 12 turns and comes back after a compaction. When the reviewer is unsure, the note tells the agent to ask you before acting on it. Your own words always win.
+
+This is what the agent sees (an example; the wording comes from the reviewer each time):
+
+```text
+reflect: the developer has pushed back on 2 of their last 6 turns (turns 4, 6). An outside reviewer read those turns and suggests:
+
+Pattern: Each fix also reformats or renames code in files the developer did not mention.
+What the pushback is about: Twice the developer narrowed the change back to src/parser.ts ("only the parser", "leave the tests alone").
+Adjustment for the next 6 turns: Edit only the files the developer names. If another file seems to need a change, say so and ask first.
+Before applying it: Before the next edit, list the files you are about to touch and check each one was named.
+
+Confidence high, false-trigger likelihood low. It may be wrong if: The developer may want the wider cleanup later, as a separate commit.
+Apply the adjustment.
+
+The developer's own words in the current turn take precedence over this note.
+```
+
+Everything reflect keeps is in `.reflect/` in your project, which ignores itself in git. Sessions are deleted after 7 days. Nothing is shared between sessions.
+
+## How well it works
+
+Measured in August 2026 on 837 turns from 224 of my own Claude Code sessions, scored against labels from Claude Opus 5:
+
+| detector | pushback turns found | precision | recall |
+|---|---:|---:|---:|
+| 0.1.4 as shipped (git reverts + English phrases) | 0 of 141 | n/a | 0.0% |
+| 0.2 (skip turns with no prior agent turn, then the judge) | about half | 87.9% | 49.6% |
+
+At the level that matters to you, whether a session gets a note at all, the default trigger (two pushbacks in six turns) fired in 16 sessions. In 15 of them the reference labels agree there was such a cluster. Of the 26 sessions where the labels show one, it caught 15. The replay that produces these numbers is `npm run bench:sim`, and it makes no API calls.
+
+The prior turn is what makes this work. With the agent's previous turn hidden, the same judge loses 10.3 F1 points (clustered bootstrap interval 1.2 to 19.8; 6.8 points once the turns where the judge declined to answer are left out). Given the prior turn of a different pair instead, it loses 27.6.
+
+Things these numbers do not tell you yet:
+
+- The labels come from a model. No human has checked them. Review sheets for that are in `bench/`.
+- They were measured with a Haiku 4.5 judge. 0.2 ships Haiku 5.5; the rerun is pending.
+- It is one developer's corpus, and only 286 of the 837 turns follow an edit to code. The rest is writing and research done in Claude Code.
+- Recall is the weak side. The judge tends to read a correction as a new instruction, so about half of real pushback goes unnoticed. That is the safer way to be wrong for a tool that interrupts a working agent, but it is a real limit.
 
 ## Install
 
-```bash
-npm install @chanjoongx/reflect
-npx reflect init      # prints the 4 manual setup steps (auto-wire is v1.1)
+In Claude Code 2.1.275 or later:
+
+```
+/plugin install reflect --marketplace chanjoongx/reflect
 ```
 
-> Published under the scoped name `@chanjoongx/reflect`. See [`CHANGELOG.md`](CHANGELOG.md) for the current version. The binary stays `reflect` (so `npx reflect ...` works unchanged). The unscoped `reflect` name is taken by a pre-existing JavaScript parser; scoping keeps the CLI identity clear and avoids name collision. v1 is hackathon-week build — expect rough edges. Path-scope delivery gap (root-level files) is a known limitation — see `<details>` "Honest gotchas" below; v0.2 fix planned.
+On older versions, run `/plugin marketplace add chanjoongx/reflect`, then `/plugin install reflect@chanjoongx`.
 
-The v1 `init` prints copy-paste instructions; you manually:
+The automatic path calls the Anthropic API directly, so it needs an API key. Claude Code asks for one when you enable the plugin (it is kept in your system's credential store). You can leave it empty if `ANTHROPIC_API_KEY` is already set in your environment or in the project's `.env`, or if you use `ant auth login`. A Claude subscription login on its own is not enough for the hooks. `/reflect:brain-reflect` still works without a key: the agent writes the reflection itself.
 
-1. Copy `node_modules/@chanjoongx/reflect/.env.example` → `.env` and set `ANTHROPIC_API_KEY=sk-ant-...`
-2. Copy `node_modules/@chanjoongx/reflect/.claude/settings.example.json` → `.claude/settings.json` (or merge the `hooks.PostToolUse` + `hooks.UserPromptSubmit` blocks into your existing `settings.json`)
-3. Copy `node_modules/@chanjoongx/reflect/.claude/rules/reflect-rules.md` → `.claude/rules/reflect-rules.md` (path-scoped: `src/**`, `lib/**`, `app/**`, `packages/**` — v0.2 widens to include root-level files like README/CHANGELOG)
-4. Add `.reflect/` to your `.gitignore`
+You need `node` 20 or later on your `PATH`. The hook is a bundled file in this repository with no dependencies to install.
 
-**Restart Claude Code** so it picks up the new hook and rule files.
+Without the plugin system:
 
 ```bash
-npx reflect status      # verify hooks wired, API key present, last trigger
+npm install -g @chanjoongx/reflect
+reflect init     # prints the hook settings to paste into .claude/settings.local.json
+reflect doctor   # checks node, the key and the wiring
 ```
 
-Full walkthrough: [`docs/getting-started.md`](docs/getting-started.md). Common issues: [`docs/troubleshooting.md`](docs/troubleshooting.md).
+## Cost
 
----
+These are estimates. The judge's token counts come from the August runs, raised by about 30% for Haiku 5.5's newer tokenizer and priced at Haiku 5.5 rates. The reflection has not yet been measured on Opus 5.5. [`docs/cost.md`](docs/cost.md) has the arithmetic.
 
-## Usage
+| call | when | estimate |
+|---|---|---|
+| judge, Claude Haiku 5.5 | each message after the agent's first reply (about 3,900 Haiku 4.5 tokens in, 90 out) | $0.0003 to $0.0009 |
+| reflection, Claude Opus 5.5 | only when two pushbacks land within six messages | at most about $0.20 |
 
-After install, reflect runs **silently in the background**. There's nothing to type day-to-day — the hook watches your tool calls and fires Opus 4.7 only when 3+ revert signals cluster within 10 turns.
+reflect stops calling the API in a session once it has spent $0.50 there. Change that with the plugin setting or `REFLECT_MAX_USD_PER_SESSION`.
 
-You'll know it fired when `.reflect/session-guidance.md` appears (or refreshes) in your project. The next turn auto-loads it via the path-scoped rule and adjusts.
+## Commands
+
+| command | what it does |
+|---|---|
+| `/reflect:brain-reflect [N]` | Reflect on your last N judged messages now (default 6), whether or not the trigger fired |
+| `reflect status` | What reflect has seen in the latest session: turns judged, pushbacks, notes, spend, errors |
+| `reflect manual [--turns N]` | The same as the slash command, from a terminal |
+| `reflect doctor` | Checks node, credentials, the hook bundle and `.reflect/` |
+| `reflect off`, `reflect on` | Turns reflect off or on for this project |
+| `reflect init` | Prints hook settings for use without the plugin |
+
+Outside the plugin, run the CLI as `npx @chanjoongx/reflect <command>`.
+
+## Configuration
+
+All optional.
+
+| variable | default | |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | | Or the plugin setting, or `ant auth login` |
+| `REFLECT_POLICY` | `k2w6` | Trigger: `k2w4`, `k2w6`, `k2w8`, `k3w8`, `k2w6-med` (medium confidence or above), `each` |
+| `REFLECT_MODEL` | `claude-opus-5-5` | The reflection model |
+| `REFLECT_EFFORT` | `high` | `low` to `max` |
+| `REFLECT_JUDGE_MODEL` | `claude-haiku-5-5` | The per-message judge |
+| `REFLECT_MAX_USD_PER_SESSION` | `0.5` | Spend cap per session |
+| `REFLECT_DISABLED` | | `1` turns every hook into a no-op |
+
+From a project's `.env`, reflect reads only `ANTHROPIC_API_KEY` and `REFLECT_*`, and never overrides the environment.
+
+## What leaves your machine
+
+Each judged message goes to the Anthropic API with your key: the message (up to 2,500 characters) and a summary of the agent's previous turn (its last 14 tool names with their file or command, and the last 1,400 characters of what it said). A reflection sends the turns that triggered it. Before anything is sent, reflect replaces home directory paths, email addresses, phone numbers and common API key formats with placeholders. Details are in [`PRIVACY.md`](PRIVACY.md).
+
+## Development
 
 ```bash
-npx reflect status         # state, last trigger, cum_x100 vs threshold
+npm install
+npm test               # typecheck and unit tests; the model calls are faked
+npm run build          # bundles src/ into hooks/reflect-hook.mjs and hooks/lib/
+npm run smoke          # runs the bundle the way Claude Code does
+claude --plugin-dir .  # try the working copy in a session
 ```
 
-```
-/brain-reflect             # manual trigger from inside Claude Code (bypasses cooldown)
-```
-
-```bash
-export REFLECT_DISABLED=1  # disable for current shell session
-# or set REFLECT_DISABLED=1 in .env for the whole project
-```
-
-Open the optional [Viewer](#viewer-optional-local-dashboard) for a real-time dashboard of session state + reflection history + cross-session drift clusters.
-
-That's it. No daily commands, no configuration once installed. Reflect stays out of the way until something needs your attention.
-
----
-
-## Viewer (optional local dashboard)
-
-The repo also ships a localhost-only Next.js 16 dashboard at `/web/` that reads your `.reflect/` directory and renders session state, reflection history, and cross-session drift clusters. **It never deploys, never makes API calls, binds to `127.0.0.1`, and runs every file read through a PII redactor.**
-
-```bash
-npm run viewer        # build + serve production (recommended — low RAM)
-# or
-npm run viewer:dev    # Turbopack dev server with HMR (higher RAM on Windows)
-```
-
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). 5 routes: `/` dashboard, `/reflections`, `/patterns`, `/install`, `/roadmap`. If `.reflect/` is empty, synthetic fixtures in `web/fixtures/` drive the UI so every route renders on a fresh clone. Full notes in [`web/README.md`](web/README.md).
-
----
-
-<details>
-<summary><b>Honest gotchas</b></summary>
-
-reflect is **not** a fix-all. Documented failure modes:
-
-- **Cold-start sessions** — first ~5 turns lack causal context. reflect declines to fire (two-layer safety net: hook threshold + prompt-level refuse).
-- **False trigger on intent changes** — if you change your mind mid-task, the reverts may be your shift, not assistant misbehavior. reflect flags `false_trigger_likelihood: high` and the next turn treats guidance as a question, not instruction.
-- **Regulatory / domain-opaque code** — tax / KYC / GDPR may produce vague reflections. Mitigation in v1.1 (user-supplied domain rule injection).
-- **Cost on large prompts** — cold call ≈ $0.05 (4,741-token L1 cached 1 h). Subsequent warm calls ≈ $0.01. See [`docs/api-cost-economics.md`](docs/api-cost-economics.md).
-
-Full mechanism detail: [`docs/measurements.md`](docs/measurements.md#failure-modes).
-
-</details>
-
-<details>
-<summary><b>Composition with stetkeep</b></summary>
-
-reflect uses [`stetkeep`](https://github.com/chanjoongx/stetkeep) (CJ's existing MIT npm package) as a base dependency. Two distinct layers:
-
-- **stetkeep** — *prevention*. Static 16-entry false-positive catalog + PreToolUse safety net. Blocks bad edits before they happen.
-- **reflect** — *post-hoc reasoning*. Dynamic metacognition after revert clustering. Catches what static rules can't.
-
-You can run either independently. Together they're a "prevention + reflection" stack. stetkeep contents are NOT part of this hackathon submission — they're prior work, installed as an npm dependency.
-
-</details>
-
-<details>
-<summary><b>Why Opus 4.7 specifically</b></summary>
-
-> "4.7 to me is a giant step up in capability. However, if you use it the same way that you used 4.6, you won't feel that step up. It's just amazing at long-running work." — Boris Cherny, *Built with Opus 4.7* kickoff
-
-The reflection task is **causal reasoning over context**, not pattern classification:
-
-- "What was I trying to do across the last 12 tool calls?"
-- "Why did the user push back?"
-- "What pattern in my actions led to failure?"
-
-Smaller models flatten this — they emit generic advice ("be more careful"). Opus 4.7 holds the causal chain across 20+ tool calls + 2–3 rule documents and produces a reflection that reads like a thoughtful teammate post-mortem. Methodology + decision log: [`experiments/`](experiments/).
-
-</details>
-
-<details>
-<summary><b>Roadmap</b></summary>
-
-- **v1** (this hackathon) — single-shot Opus 4.7, session-local, honest failure modes
-- **v1.1** — opt-in *deep-reflect mode* (multi-turn dialogue), domain rule injection
-- **v2** — optional persistence (only if v1 signals warrant — see [`REFLECT.md`](REFLECT.md) `<roadmap>`)
-
-</details>
-
-<details>
-<summary><b>Contributing</b></summary>
-
-We particularly want:
-
-- New revert-signal detection patterns (with reproducer)
-- Failure-mode reports (sessions where reflect fired but produced bad guidance)
-- Reflection prompt improvements (with ablation evidence)
-- Language ports — the harness is model-agnostic; Python / Rust ports welcome
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Process: open an issue → align scope → PR.
-
-</details>
-
-<details>
-<summary><b>Security &amp; supply chain</b></summary>
-
-- Zero runtime dependencies on the harness layer (TypeScript + Anthropic SDK only)
-- No network calls outside the single Opus 4.7 API call
-- No telemetry, no analytics, no data exfiltration
-- Pre-commit PII scanner (cloned from stetkeep)
-- Privacy policy: [`PRIVACY.md`](PRIVACY.md) · Vulnerability reports: [`SECURITY.md`](SECURITY.md)
-
-</details>
-
----
+The committed bundle must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
 
 ## License
 
-[MIT](LICENSE).
-
----
-
-<div align="center">
-
-**Built by [Chanjoong Kim](https://github.com/chanjoongx) · Hackathon week of 2026-04-21**
-*A harness for the model 6 months from now.*
-
-</div>
+MIT. The bundled Anthropic SDK and its dependencies are listed with their licenses in [`hooks/THIRD_PARTY_LICENSES.txt`](hooks/THIRD_PARTY_LICENSES.txt).

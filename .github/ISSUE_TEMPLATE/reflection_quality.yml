@@ -1,5 +1,5 @@
 name: Reflection quality issue
-description: A reflection was generic, wrong, or counterproductive. Help us improve the prompt.
+description: A reflection was generic, wrong, or counterproductive, or reflect missed or misread your pushback.
 title: "[rq] "
 labels: ["reflection-quality"]
 body:
@@ -15,7 +15,8 @@ body:
         - Generic (no actionable adjustment)
         - Wrong pattern identification
         - Missed obvious signal
-        - False trigger (intent change misread as feedback)
+        - False trigger (an ordinary instruction judged as pushback)
+        - Missed pushback (you corrected the agent and nothing was judged as pushback)
         - Hallucinated context not in prompt
         - Other
     validations:
@@ -25,7 +26,7 @@ body:
     attributes:
       label: Trigger context (1-2 sentences)
       description: What were you doing when the reflection fired?
-      placeholder: "Refactoring src/billing/kyc.ts. User reverted 3 times after I extracted a magic number."
+      placeholder: "Refactoring src/billing/kyc.ts. I told it twice to keep the magic number where it was."
     validations:
       required: true
   - type: textarea
@@ -47,8 +48,9 @@ body:
   - type: textarea
     id: redacted-prompt
     attributes:
-      label: Trigger payload (L3 layer, redacted)
+      label: The verdict and fire lines (redacted)
       description: |
-        From `.reflect/state.json` or trigger log. Redact PII.
-        Optional but very helpful — let us reproduce.
+        The "verdict", "fire" and "guidance" lines from `.reflect/sessions/<session>/events.jsonl`.
+        They hold your messages (already redacted for keys, emails and home paths); remove anything else private.
+        Optional, but it lets us reproduce the call.
       render: json

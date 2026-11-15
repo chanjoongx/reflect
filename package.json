@@ -1,41 +1,36 @@
 {
   "name": "@chanjoongx/reflect",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "Session-local metacognition harness for long-running Claude Code work. When suggestions get reverted, Opus 4.7 reasons about why and injects guidance into the next turn.",
+  "description": "A Claude Code plugin that notices when you keep pushing back on the agent, works out why, and tells the agent before its next step.",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
   },
   "bin": {
-    "reflect": "dist/bin/reflect.js"
+    "reflect": "hooks/reflect-hook.mjs"
   },
   "files": [
-    "dist/",
-    "commands/",
-    "agents/",
     "hooks/hooks.json",
-    "hooks/reflect-trigger.sh",
-    "hooks/reflect-trigger.ps1",
-    "hooks/reflect-utterance.sh",
-    "hooks/reflect-utterance.ps1",
-    ".claude-plugin/",
-    ".claude/rules/reflect-rules.md",
-    ".claude/settings.example.json",
+    "hooks/reflect-hook.mjs",
+    "hooks/lib/",
+    "hooks/THIRD_PARTY_LICENSES.txt",
+    "commands/",
+    ".claude-plugin/plugin.json",
     ".env.example",
-    "REFLECT.md",
-    "ARCHITECTURE.md",
     "README.md",
-    "LICENSE",
-    "CHANGELOG.md"
+    "ARCHITECTURE.md",
+    "PRIVACY.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "license": "MIT",
   "author": {
     "name": "Chanjoong Kim",
     "email": "cj@chanjoongx.com",
-    "url": "https://github.com/chanjoongx"
+    "url": "https://chanjoongx.com"
   },
   "repository": {
     "type": "git",
@@ -48,38 +43,33 @@
   "keywords": [
     "claude-code",
     "claude-code-plugin",
+    "claude-code-hooks",
     "claude",
     "anthropic",
-    "opus-4-7",
     "metacognition",
     "session-local",
     "reflection",
+    "pushback",
+    "correction-detection",
     "ai-agents",
     "ai-coding",
-    "harness",
-    "long-running",
     "developer-tools"
   ],
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.40.0",
-    "dotenv": "^16.6.1",
-    "stetkeep": "^0.4.6"
-  },
+  "dependencies": {},
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.5.0",
     "@types/node": "^22.10.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx bin/reflect.ts",
-    "reflect": "tsx bin/reflect.ts",
-    "reflect:manual": "tsx bin/reflect.ts manual --debug",
-    "reflect:status": "tsx bin/reflect.ts status",
-    "reflect:log": "tsx bin/reflect.ts log",
-    "test": "tsc --noEmit && tsc --noEmit -p bench/tsconfig.json && node --test --import tsx \"src/**/*.test.ts\" \"bench/**/*.test.ts\"",
+    "build": "node scripts/build-hook.mjs",
+    "check:bundle": "node scripts/build-hook.mjs --check",
+    "reflect": "tsx src/entry.ts",
+    "test": "npm run typecheck && node --test --import tsx \"src/**/*.test.ts\" \"bench/**/*.test.ts\"",
     "typecheck": "tsc --noEmit && tsc --noEmit -p bench/tsconfig.json",
-    "mirror-check": "diff -rq commands/ .claude/commands/ && diff -rq agents/ .claude/agents/ && diff -rq hooks/ .claude/hooks/ --exclude=hooks.json && diff -q src/redact.ts web/lib/redact.ts",
+    "mirror-check": "diff -q src/redact.ts web/lib/redact.ts",
     "viewer": "npm run preview --prefix web",
     "viewer:dev": "npm run dev --prefix web",
     "viewer:build": "npm run build --prefix web",
@@ -88,7 +78,8 @@
     "bench:score": "tsx bench/score.ts",
     "bench:report": "tsx bench/report.ts",
     "bench:review": "tsx bench/review.ts",
-    "bench": "npm run bench:extract && npm run bench:score && npm run bench:report",
-    "typecheck:bench": "tsc --noEmit -p bench/tsconfig.json"
+    "bench:sim": "tsx bench/session-sim.ts",
+    "bench": "npm run bench:score && npm run bench:report && npm run bench:sim",
+    "smoke": "node scripts/smoke.mjs"
   }
 }

@@ -1,164 +1,141 @@
-# Getting Started — install to first reflection in 10 minutes
+# Getting started
 
-This guide gets you from `npm install` to a working `reflect` reflection in under 10 minutes.
+This page takes you from install to your first reflection. The rest of the time reflect runs in the background and you do not need to touch it.
 
----
+## What you need
 
-## Prerequisites
+- Claude Code 2.1.275 or later. Older versions work with the two-step install below.
+- `node` 20 or later on your `PATH`. The hook is a bundled file with nothing to install.
+- An Anthropic API key, or an `ant auth login` profile. The judge and the reflection call the Anthropic API directly and are billed to that key. A Claude subscription login on its own is not enough for the automatic path; without a key you can still use `/reflect:brain-reflect`, and the agent writes the reflection itself.
 
-- Node 20+
-- Claude Code 2026+ (for hooks + path-scoped rules)
-- An Anthropic API key (`sk-ant-...`)
-- bash on macOS/Linux/Git Bash, or PowerShell on Windows
-- `jq` optional (hook falls back to grep if absent)
+## 1. Install the plugin
 
----
+In Claude Code:
 
-## Step 1 — Install
+```
+/plugin install reflect --marketplace chanjoongx/reflect
+```
+
+On versions before 2.1.275:
+
+```
+/plugin marketplace add chanjoongx/reflect
+/plugin install reflect@chanjoongx
+```
+
+When you enable the plugin, Claude Code asks for three settings:
+
+| setting | default | |
+|---|---|---|
+| Anthropic API key | empty | Kept in your system's credential store. Leave it empty if `ANTHROPIC_API_KEY` is already set in your environment or in the project's `.env`, or if you use `ant auth login`. |
+| Reflection model | `claude-opus-5-5` | The model that writes the note. The judge is always Claude Haiku 5.5 unless you set `REFLECT_JUDGE_MODEL`. |
+| Spend cap per session (USD) | `0.5` | reflect stops calling the API in a session once its calls there have cost this much. |
+
+## 2. Check the setup
+
+From the project directory, in a terminal:
 
 ```bash
-cd /path/to/your-project
-npm install @chanjoongx/reflect
+npx @chanjoongx/reflect doctor
 ```
 
-This installs `@chanjoongx/reflect` (current version: see [CHANGELOG.md](../CHANGELOG.md)) and its dependency `stetkeep` (used internally for path-scoped rule auto-loading). The binary is `reflect` so `npx reflect ...` works unchanged. Scoped name because the unscoped `reflect` on npm is an older JavaScript parser package; v1 is hackathon-week build — `0.x` semver explicitly signals "expect changes before 1.0".
+On a fresh project with no key in the environment, it prints something like:
 
----
+```
+ok    node >= 20               24.13.0
+warn  credentials              none in env; the SDK may still find an `ant auth login` profile
+ok    enabled here             <your project directory>
+warn  sessions recorded        none yet (normal before the first prompt)
+```
 
-## Step 2 — Set up your API key
+A `warn` on `sessions recorded` is normal before the first prompt. A `warn` on `credentials` is fine if you set the key in the plugin settings or use `ant auth login`; `doctor` cannot see either from a terminal. When a key is found it says `API key found (env, .env or plugin setting)`.
+
+## 3. Work as usual
+
+Each message you send after the agent's first reply is judged in the background: Claude Haiku 5.5 reads it next to what the agent had just done and labels it. Your prompt is never delayed by this.
+
+When two of your messages within six turns are pushback (a correction, a rejection or a report that something is broken), Claude Opus 5.5 reads those two turns and writes a short note. The agent receives it at its next tool call or your next message. It starts like this:
+
+```
+reflect: the developer has pushed back on 2 of their last 6 turns (turns <a>, <b>). An outside reviewer read those turns and suggests:
+```
+
+followed by the pattern, what the pushback is about, an adjustment for the next few turns, a check to run first, and how the note might be wrong. If the reviewer's confidence is low, the note tells the agent to ask you before acting on it. Your own words in the current turn always take precedence over the note.
+
+A copy for you is written to `.reflect/session-guidance.md`.
+
+## 4. See what reflect saw
 
 ```bash
-cp node_modules/@chanjoongx/reflect/.env.example .env
-# Edit .env and replace the placeholder with your actual Anthropic API key
+npx @chanjoongx/reflect status
 ```
 
-Add `.env` to your `.gitignore` if it isn't already.
+```
+reflect 0.2.0 · session <session id>
+  developer turns   <n>
+  judged            <n> (skipped <n>: no prior agent turn, budget, or similar)
+  pushback          <n>  [<labels>]
+  reflections       <n> (fires <n>, policy k2w6)
+  spent             $<amount> of $0.5000 cap
+```
 
----
+If a note is waiting or still in force, `status` prints it under `Guidance waiting to be delivered:` or `Guidance in force:`. If anything went wrong it adds an `errors` line with the last message; see [troubleshooting](troubleshooting.md).
 
-## Step 3 — Wire the PostToolUse hook
+## 5. Ask for a reflection yourself
+
+Inside Claude Code:
+
+```
+/reflect:brain-reflect
+/reflect:brain-reflect 10
+```
+
+This sends your last N judged messages (default 6, at most 12) to the reflection model right away, whether or not the trigger fired, and tells it some of them may not be pushback. The agent then tells you what the pattern is and what it will change. With no key, or before any message has been judged, the command prints `No outside reflection is available, so write one yourself from this conversation instead (see below).` and the agent writes the reflection from the conversation.
+
+From a terminal, `npx @chanjoongx/reflect manual --turns 10` does the same and prints the note.
+
+## 6. Turn it off
 
 ```bash
-mkdir -p .claude
-cp node_modules/@chanjoongx/reflect/.claude/settings.example.json .claude/settings.json
+npx @chanjoongx/reflect off   # reflect is off for this project. `reflect on` turns it back on.
+npx @chanjoongx/reflect on
 ```
 
-If `.claude/settings.json` already exists (from other tooling), merge the `hooks.PostToolUse` block manually instead of overwriting.
+`off` writes `.reflect/disabled`, which every hook checks first. Setting `REFLECT_DISABLED=1` in the environment does the same for every project.
 
-On native Windows PowerShell (no Git Bash), edit the `command` field to:
-```
-powershell -File $CLAUDE_PROJECT_DIR/.claude/hooks/reflect-trigger.ps1
-```
-
----
-
-## Step 4 — Install the path-scoped rule
+## Without the plugin system
 
 ```bash
-mkdir -p .claude/rules
-cp node_modules/@chanjoongx/reflect/.claude/rules/reflect-rules.md .claude/rules/
+npm install -g @chanjoongx/reflect
+reflect init
 ```
 
-This file declares that when Claude reads files in `src/**`, `lib/**`, `app/**`, or `packages/**`, it should auto-load `.reflect/session-guidance.md` if it exists.
+`reflect init` prints the hook settings to merge into `.claude/settings.local.json`. They have the same shape as the plugin's `hooks/hooks.json`, with an absolute path to the installed bundle, because hook arguments do not pass through a shell:
 
----
-
-## Step 5 — Verify
-
-```bash
-npx reflect status
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "session-start"], "timeout": 10 }] }],
+    "UserPromptSubmit": [{ "hooks": [
+      { "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "prompt"], "timeout": 10 },
+      { "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "judge"], "async": true }
+    ] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "node", "args": ["<bundle>/hooks/reflect-hook.mjs", "tool"], "timeout": 10 }] }]
+  }
+}
 ```
 
-Expected output (first run, no triggers yet):
+Then run `reflect doctor` in the project and restart Claude Code. Without the plugin there is no settings dialog, so the key has to come from `ANTHROPIC_API_KEY` or the project's `.env`, and `/reflect:brain-reflect` is not installed; use `reflect manual` instead.
 
-```
-reflect: no active session state (no triggers fired yet)
-```
+## What reflect writes
 
----
+Everything goes under `.reflect/` in the project:
 
-## Step 6 — Trigger your first reflection
+| path | what |
+|---|---|
+| `.reflect/.gitignore` | `*`, written on first use, so nothing here is committed by accident |
+| `.reflect/sessions/<session id>/events.jsonl` | One JSON line per event: each prompt, verdict, skip, fire, note and delivery. Session folders older than 7 days are deleted when a new session starts. |
+| `.reflect/session-guidance.md` | The latest note, for you to read |
+| `.reflect/disabled` | Present only after `reflect off` |
 
-### Option A: Manual (immediate, bypasses threshold)
-
-```bash
-npx reflect manual --debug
-```
-
-You'll see:
-```
-[reflect] manual trigger — scope: session
-[reflect] cost=$0.0938 cache_read=0 cache_write=6502 latency=4231ms hit_rate=0.0%
-
-## Reflection
-
-pattern:    (stub example — assemble real context for production use)
-signal:     ...
-adjustment: ...
-
-confidence: medium | scope: this_session | FT: low
-cost:       $0.0938 | cache hit: 0.0% | 4231ms
-```
-
-The first call writes the L1 + L2 cache (cold). Subsequent calls in the same hour will be ~$0.04 (warm).
-
-### Option B: Auto trigger (real workflow)
-
-In Claude Code, run a coding session that produces revert signals:
-
-1. Ask Claude to refactor a file
-2. Revert via `git restore <file>` or undo
-3. Repeat until 3 revert signals accumulate within 10 tool calls
-
-The PostToolUse hook will detect the cluster, invoke `bin/reflect.ts` in the background, and write `.reflect/session-guidance.md`.
-
-Verify:
-```bash
-cat .reflect/session-guidance.md
-```
-
----
-
-## Step 7 — Use the slash command (manual trigger from inside Claude Code)
-
-Inside a Claude Code session, type:
-
-```
-/brain-reflect
-```
-
-This invokes the `reflection-orchestrator` subagent which calls `bin/reflect.ts manual` and reports the structured reflection back.
-
----
-
-## Troubleshooting
-
-### "ANTHROPIC_API_KEY is not set"
-Ensure `.env` exists in your project root and contains `ANTHROPIC_API_KEY=sk-ant-...`.
-If using `npx`, it may not auto-load `.env` — load via `dotenv` or run with `npm run`.
-
-### Hook doesn't fire after reverts
-Check `.claude/settings.json` has the `hooks.PostToolUse` block.
-Test the hook manually:
-```bash
-echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"test"}' | bash .claude/hooks/reflect-trigger.sh
-```
-
-### Cache hit rate is always 0%
-- First call is always 0% (cold)
-- Subsequent calls within 1h should show >70%
-- If still 0% after multiple calls: check `.reflect/state.json` for session_id consistency
-
-### Reflection JSON parse fails
-Opus 4.7 may occasionally wrap output in ```` ```json ```` fences. The parser handles this.
-If failures persist, set `REFLECT_DEBUG=1` and inspect the raw response.
-
----
-
-## Next steps
-
-- Read [`REFLECT.md`](../REFLECT.md) for the full protocol spec
-- Read [`ARCHITECTURE.md`](../ARCHITECTURE.md) for the harness vs model layer separation
-- Read [`docs/opus-4.7-best-practices.md`](opus-4.7-best-practices.md) for API spec details (2026-04 corrections)
-- Read [`docs/api-cost-economics.md`](api-cost-economics.md) for cost math + breakeven analysis
-- Read [`docs/troubleshooting.md`](troubleshooting.md) for common issues
+Costs are estimated in [cost.md](cost.md). How the pieces fit is in [ARCHITECTURE.md](../ARCHITECTURE.md).

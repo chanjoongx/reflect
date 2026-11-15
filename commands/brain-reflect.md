@@ -1,55 +1,26 @@
 ---
-name: brain-reflect
-description: Manually trigger reflect — a session-local metacognition reflection on recent tool calls.
-argument-hint: "[scope: session|recent]"
+description: Ask reflect now why the developer keeps pushing back in this session
+argument-hint: "[turns to read, 1 to 12, default 6]"
+allowed-tools: Bash(node:*)
 ---
 
-# /brain-reflect
+## What reflect found
 
-Invoke a manual reflection on the current Claude Code session. Bypasses the automatic threshold (3 weighted revert signals in 10 tool calls) and cooldown — fires on demand.
+!`node "${CLAUDE_PLUGIN_ROOT}/hooks/reflect-hook.mjs" manual --agent --session "${CLAUDE_SESSION_ID}" --turns $ARGUMENTS`
 
-## What this does
+## What to do with it
 
-1. Reads `REFLECT.md` from project root (protocol spec)
-2. Calls `bin/reflect.ts manual` which:
-   - Assembles the 3-layer prompt (L1 stable + L2 medium + L3 ephemeral)
-   - Calls Opus 4.7 with adaptive thinking (`effort: high`)
-   - Parses structured JSON response: `{ pattern, signal, adjustment, confidence, scope, false_trigger_likelihood }`
-   - Writes to `.reflect/session-guidance.md`
-3. Reports the reflection summary back to the user
-4. Future tool calls in this session will pick up the guidance via `.claude/rules/reflect-rules.md` (path-scoped)
+The developer ran `/brain-reflect` because they want you to step back and look at how this session is going.
 
-## Steps for Claude Code to execute
+If the output above contains a reflect note (it starts with "reflect:" and has a Pattern line), it was written by a separate model that read the developer's recent messages and what you did just before each one. Tell the developer, in two or three sentences, what it says the pattern is and what you will do differently. Then follow its adjustment, unless it says to ask first or the developer's own words say otherwise.
 
-1. Read the most recent 20 tool calls from session transcript
-2. Read any rolled-back diff (if available)
-3. Read `.claude/rules/reflect-rules.md` (active rules in this scope)
-4. Execute: `npx tsx bin/reflect.ts manual --scope $ARGUMENTS`
-5. Report the reflection's `pattern` / `signal` / `adjustment` to the user
-6. Wait for user acknowledgment before applying `adjustment` to next turn
+If the output says no outside reflection is available, write one yourself from this conversation. Look at the developer's last several messages and what you did right before each one. Then tell the developer:
 
-## Optional argument
+1. **Pattern**: what you have been doing that the developer keeps redirecting, in one sentence. Name the actual behaviour (for example "editing files beyond the one you named"), not a general trait.
+2. **Signal**: the developer's words that show it, quoted briefly.
+3. **Adjustment**: the concrete change you will make for the next few turns.
+4. **Could be wrong if**: one sentence on the most likely other reading.
 
-`$ARGUMENTS` (default: `session`):
-- `session` — entire session context (default)
-- `recent` — last 10 tool calls only (faster, cheaper)
+If nothing in the recent turns looks like pushback, say so plainly and do not invent a pattern.
 
-## Cost
-- Cold call (first reflect of session): ~$0.05 (measured D2)
-- Warm call (subsequent in same hour): ~$0.01 (measured D2, 95.9% L1 cache hit)
-
-Cost details: `docs/api-cost-economics.md`.
-
-## When to use
-
-- After a noticeable pattern of mistakes (you don't want to wait for the auto-trigger)
-- Before a critical decision (e.g., "should I refactor this whole module?")
-- At the end of a long task (post-mortem reflection on what worked)
-
-## When NOT to use
-
-- Sessions with < 5 tool calls (cold-start; reflect refuses to fire — see `<safety_net>` in `REFLECT.md`)
-- Immediately after intent change (false_trigger_likelihood: high)
-- Inside regulatory / domain-opaque code (Generic output likely)
-
-End the report with the reflection's `confidence` and `false_trigger_likelihood` fields visible.
+Keep the whole answer short. Do not start any new work in this reply.

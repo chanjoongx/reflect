@@ -4,7 +4,7 @@
 // operates on. Everything written here is redacted; raw utterances never
 // leave .reflect/ or bench/data/, and bench/data/ is gitignored.
 
-import { mkdirSync, writeFileSync, createWriteStream } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, createWriteStream } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { findTranscripts, parseSessionFile, shortHash } from "../src/transcript/parse.js";
@@ -17,6 +17,7 @@ interface Args {
   projects: string;
   out: string;
   sidechain: boolean;
+  force: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -28,6 +29,7 @@ function parseArgs(argv: string[]): Args {
     projects: get("--projects", join(homedir(), ".claude", "projects")),
     out: get("--out", "bench/data"),
     sidechain: argv.includes("--sidechain"),
+    force: argv.includes("--force"),
   };
 }
 
@@ -64,8 +66,34 @@ function serialise(p: Pair) {
   };
 }
 
+const USAGE = `bench/extract.ts: ~/.claude/projects/**/*.jsonl -> <out>/pairs.jsonl
+
+  --projects <dir>   transcript root (default ~/.claude/projects)
+  --out <dir>        output directory (default bench/data)
+  --sidechain        extract subagent transcripts instead of the main thread
+  --force            overwrite an existing <out>/pairs.jsonl
+
+A corpus cannot be re-extracted once Claude Code has purged its transcripts
+(~30 days), so an existing pairs.jsonl is never overwritten without --force.
+Write a new corpus to a new --out directory instead.
+`;
+
 function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.includes("--help") || argv.includes("-h")) {
+    process.stdout.write(USAGE);
+    return;
+  }
+  const args = parseArgs(argv);
+  const target = join(args.out, "pairs.jsonl");
+  if (existsSync(target) && !args.force) {
+    process.stderr.write(
+      `[extract] refusing to overwrite ${target}: it may be the only copy of a corpus whose ` +
+        `transcripts have been purged. Use --out <new dir>, or --force if you mean it.
+`,
+    );
+    process.exit(2);
+  }
   mkdirSync(args.out, { recursive: true });
 
   const files = findTranscripts(args.projects);

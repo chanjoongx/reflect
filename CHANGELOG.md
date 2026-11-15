@@ -6,6 +6,45 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.2.0] (unreleased)
+
+0.1.4 never fired. Over 109 real sessions in July it triggered zero reflections, and on a labelled benchmark of 837 developer turns it found 0 of the 141 that were pushback ([`bench/FINDINGS.md`](bench/FINDINGS.md)). 0.2 replaces the detector, the reflection and the delivery.
+
+### Changed
+
+- **Detection.** Each developer message after the agent's first reply is judged with the agent's previous turn beside it (read from the session transcript) by Claude Haiku 5.5 with structured output. Labels follow SWE-chat: correction, rejection and failure report count as pushback. The git and regex signals are gone. Measured with a Haiku 4.5 judge against Claude Opus 5 labels: 87.9% precision, 49.6% recall per turn, against 0% recall for 0.1.4.
+- **Trigger.** A sliding window replaces the weighted counter: two pushbacks within six developer turns, then a three-turn cooldown (`REFLECT_POLICY` picks another policy). Replayed over the benchmark it fires in 16 sessions, 15 of which the reference agrees with (`npm run bench:sim`).
+- **Reflection.** Claude Opus 5.5 with adaptive thinking reads exactly the turns that tripped the trigger, including the developer's words and the judge's evidence. The output adds a counter-hypothesis, a check to run first, and an expiry of 3 to 12 turns.
+- **Delivery.** The note reaches the agent once, as `additionalContext` on its next tool call or the developer's next prompt, and is re-delivered after compaction while it is in force. 0.1 wrote a file and relied on a path-scoped rule to load it.
+- **One implementation.** The two bash and two PowerShell hooks and the TypeScript reference are replaced by `src/`, bundled into the committed `hooks/reflect-hook.mjs`. A plugin install needs only `node` 20. The Anthropic SDK sits in a chunk that only the model calls load, so the hooks that run on every tool call stay light.
+- **State.** An append-only event log per session in `.reflect/sessions/`, a lock around firing, a claim file so that parallel tool calls deliver a note once, `.reflect/.gitignore`, and pruning 7 days after a session's last event. A verdict that arrives late cannot fire a second reflection on turns that already fired.
+- **Models and SDK.** `@anthropic-ai/sdk` 1.5 (bundled; no runtime dependencies). Pricing table updated to 2026-11-16 rates.
+- **CLI.** `reflect status`, `manual`, `doctor`, `init`, `on`, `off`. `/brain-reflect` works without an API key by asking the agent to reflect on its own context.
+
+### Added
+
+- `bench/`: the correction-detection benchmark (extract, label, score, report, review) and `bench/session-sim.ts`, which replays trigger policies over cached verdicts without API calls.
+- Plugin `userConfig` for the API key (kept in the system credential store), the reflection model and a per-session spend cap (default $0.50).
+- `.claude-plugin/marketplace.json`, so `/plugin install reflect --marketplace chanjoongx/reflect` works.
+- `hooks/THIRD_PARTY_LICENSES.txt` for the bundled packages.
+- CI on Linux (node 20, 24) and Windows (node 24): unit tests, bundle freshness, and a smoke test that runs the bundle under plain `node`.
+
+### Fixed
+
+- `<ide_opened_file>` and `<ide_selection>` blocks were left in developer messages, because the pattern in `src/transcript/parse.ts` was built in a template literal that dropped its backslashes. The August benchmark data contains none of these tags, so its numbers are unchanged.
+
+### Removed
+
+- `hooks/*.sh`, `hooks/*.ps1`, `bin/reflect.ts`, `src/{context-assembler,opus-reflection,guidance-injector,logger,revert-detector,types}.ts`.
+- The `reflection-orchestrator` agent, the `.claude/` mirrors, `.claude/rules/reflect-rules.md` and `.claude/settings.example.json`.
+- Runtime dependencies `dotenv` and `stetkeep`.
+- The `bin/` directory at the repository root, which Claude Code treats as plugin executables.
+
+### Known gaps
+
+- The benchmark numbers were measured with Haiku 4.5; the Haiku 5.5 rerun is pending. No human has checked the reference labels yet.
+- The local viewer in `web/` still reads the 0.1 files.
+
 ## [0.1.4] — 2026-04-29
 
 ### Fixed (post 8-agent parallel audit)

@@ -1,0 +1,17 @@
+{
+  "name": "chanjoongx",
+  "description": "Claude Code plugins by Chanjoong Kim.",
+  "owner": {
+    "name": "Chanjoong Kim",
+    "email": "cj@chanjoongx.com",
+    "url": "https://chanjoongx.com"
+  },
+  "plugins": [
+    {
+      "name": "reflect",
+      "source": "./",
+      "category": "development",
+      "tags": ["hooks", "metacognition", "pushback"]
+    }
+  ]
+}

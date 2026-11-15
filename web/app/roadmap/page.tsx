@@ -80,8 +80,8 @@ const accentBullet: Record<Milestone["accent"], string> = {
 
 const sidebarLinks = [
   {
-    href: "https://github.com/chanjoongx/reflect/blob/main/experiments/ablation-with-without.md",
-    title: "experiments/ablation-with-without.md",
+    href: "https://github.com/chanjoongx/reflect/blob/main/docs/v0.1/experiments/ablation-with-without.md",
+    title: "docs/v0.1/experiments/ablation-with-without.md",
     note: "Why we deferred the controlled ablation",
   },
   {
@@ -90,8 +90,8 @@ const sidebarLinks = [
     note: "CJ's real 4-day usage",
   },
   {
-    href: "https://github.com/chanjoongx/reflect/blob/main/docs/measurements.md",
-    title: "docs/measurements.md",
+    href: "https://github.com/chanjoongx/reflect/blob/main/docs/v0.1/measurements.md",
+    title: "docs/v0.1/measurements.md",
     note: "Cache hit rates, cost math, token counts",
   },
 ];

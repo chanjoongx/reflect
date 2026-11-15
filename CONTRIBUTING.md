@@ -1,96 +1,27 @@
 # Contributing to reflect
 
-Thank you for considering a contribution. The most useful contributions to reflect are **calibration data** — concrete cases where the reflection prompt produced poor output, with a hand-crafted "good" version.
+The contributions that help most right now are cases where reflect got it wrong, written up so they can be checked.
 
----
+## Most useful contributions
 
-## Highest-value contributions
+### 1. Misjudged messages and bad notes
 
-### 1. Reflection quality reports (highest leverage)
-Use the [Reflection quality issue template](.github/ISSUE_TEMPLATE/reflection_quality.yml).
+Use the [reflection quality issue template](.github/ISSUE_TEMPLATE/reflection_quality.yml). Useful reports include:
 
-Each well-documented case becomes a calibration example in the L1 prompt — improves the model for everyone.
+- a message the judge called pushback that was not, or real pushback it missed (copy the `verdict` line from `.reflect/sessions/<id>/events.jsonl`, after removing anything private);
+- a note that was generic, wrong or harmful, with what it should have said.
 
-### 2. New revert signal patterns
-We currently detect 3 tiers (hard / inferred / soft). If you observe a recurring pattern that should trigger but doesn't, propose:
-- Pattern definition (regex or heuristic)
-- Tier classification (1, 2, or 3)
-- Weight (1.0 / 0.7 / 0.5)
-- Reproducer
+The benchmark behind reflect's numbers comes from one developer's sessions, so cases from other people and other languages are worth more than anything else here.
 
-### 3. Failure mode reports
-If you find a session where reflect produces a bad reflection AND the badness was predictable (cold-start, intent change, regulatory domain), report it.
+### 2. Running the benchmark on your own sessions
 
-We document failure modes in [`docs/measurements.md`](docs/measurements.md#failure-modes) (and the public `README.md`'s "Honest gotchas" section).
+[`bench/README.md`](bench/README.md) explains how to build a corpus from your own Claude Code transcripts and score the judge on it. Labelling calls the API and costs money (about $25 for a full five-run pass over ~840 pairs). If you do this, please share the aggregate results, not the transcripts.
 
-### 4. Language ports
-The harness layer is model-agnostic. Python / Rust / Go ports of `bin/reflect.ts` + `src/*` are welcome. Constraints:
-- Same external API (PostToolUse hook contract)
-- Same .reflect/ filesystem layout
-- Strict typing where the language supports it
+### 3. Changes to the judge or the reflection prompt
 
-### 5. Reflection prompt iteration (with ablation evidence)
-If you have a candidate prompt change:
-1. Implement
-2. Run `experiments/ablation-components.md` style test on N≥5 payloads
-3. Submit PR with raw results + analysis
+The judge's rubric and rendering are part of `judgeFingerprint()` in `src/detect/judge.ts`. Changing them invalidates every cached label, so a rubric change needs new benchmark numbers in the PR (precision, recall and F0.5 per turn, plus the session replay from `npm run bench:sim`). A change to the reflection prompt in `src/reflect/reflection.ts` needs before-and-after notes on the same pushback turns.
 
-PRs without ablation evidence are unlikely to merge.
-
----
-
-## Process
-
-### Small contributions (issue templates, doc fixes, typo)
-1. Fork
-2. Edit
-3. Open PR
-
-### Medium contributions (new signal pattern, prompt tweak)
-1. Open issue first describing the change
-2. Wait for ack from maintainer
-3. PR with implementation + test
-
-### Large contributions (deep-reflect mode, persistence layer, ports)
-1. Open issue with detailed proposal
-2. Discussion + scope alignment
-3. PR in phases (interface first, implementation second)
-
----
-
-## Style
-
-- **Honesty first** — never claim mechanical enforcement for prompt-only features
-- **Concrete detection rules** — "regex matches `^git revert`" beats "git revert command"
-- **Preserve the structured JSON output schema** — it's load-bearing for parser
-- **No emojis in prompts or schemas** — they can disrupt parsing in edge cases
-- **TypeScript strict** — no `any` without justification, exhaustive switches
-
----
-
-## What we will reject
-
-- Cross-session memory features that bypass the v1 session-local contract
-- Prompt changes without ablation evidence
-- Telemetry / data collection outside `.reflect/session-log.jsonl` (opt-in, ephemeral)
-- Hooks that block tool execution (reflect is observational, not preventive — that's stetkeep)
-- PRs that increase per-call cost > 20% without a corresponding quality justification
-
----
-
-## Dogfooding layout
-
-The repo contains two copies of plugin directories:
-
-- `commands/`, `agents/`, `hooks/` at root = canonical, marketplace-distributed
-- `.claude/commands/`, `.claude/agents/`, `.claude/hooks/` = mirrors
-
-Both must stay byte-identical (CI enforces). When editing:
-1. Edit root version first
-2. Copy to `.claude/` mirror
-3. Verify: `npm run mirror-check`
-
----
+PRs that change either prompt without that evidence are unlikely to merge.
 
 ## Local development
 
@@ -98,32 +29,70 @@ Both must stay byte-identical (CI enforces). When editing:
 git clone https://github.com/<your-username>/reflect.git
 cd reflect
 npm install
-cp .env.example .env  # fill ANTHROPIC_API_KEY
-npx tsc --noEmit
+npm test               # typecheck and node:test, 116 tests; the model calls are faked
+npm run build          # bundles src/ into hooks/reflect-hook.mjs and hooks/lib/
+npm run check:bundle   # fails if the committed bundle does not match src/
+npm run smoke          # runs the bundle under plain node, as Claude Code does, with no API key
+npm run mirror-check   # src/redact.ts must match web/lib/redact.ts
 ```
 
-### Test the hook
-```bash
-echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"test"}' | bash hooks/reflect-trigger.sh
-```
+To try your working copy in a real session, run `claude --plugin-dir .` from the repository root. A gitignored `.claude/settings.json` that points the four hooks at `hooks/reflect-hook.mjs` works too.
 
-### Test the API call (real Opus 4.7)
-```bash
-REFLECT_DEBUG=1 npx tsx bin/reflect.ts manual --debug
-```
+None of these commands calls the API. To exercise the judge or the reflection for real, put a key in your environment and use the plugin; the cost lands on that key.
 
----
+### Rules for the bundle
+
+- Edit `src/`. Never edit `hooks/reflect-hook.mjs` or `hooks/lib/` by hand.
+- After any change under `src/`, run `npm run build` and commit the rebuilt bundle with the source change. A plugin install is a git clone with no build step, so the committed bundle is what users run. CI runs `check:bundle` and fails on a stale one.
+- The package has no runtime dependencies. The Anthropic SDK is bundled into a chunk under `hooks/lib/` that only the judge and the reflection load. Keep it that way, because the `prompt` and `tool` hooks run on every message and tool call.
+- `src/redact.ts` is the canonical redactor and `web/lib/redact.ts` is a copy for the viewer. Edit the first and copy it over.
+- The version lives in `src/version.ts`, `package.json` and `.claude-plugin/plugin.json`. A test fails if they disagree.
+
+CI (`.github/workflows/ci.yml`) runs `npm test`, `check:bundle` and `smoke` on Ubuntu with Node 20 and 24 and on Windows with Node 24, and `mirror-check` on Ubuntu.
+
+## Process
+
+### Small contributions (issue templates, doc fixes, typos)
+1. Fork
+2. Edit
+3. Open a PR
+
+### Medium contributions (a prompt change, a new trigger policy)
+1. Open an issue first describing the change
+2. Wait for an acknowledgment from the maintainer
+3. Open a PR with the implementation, tests and evidence
+
+### Large contributions (persistence, new hook events, other agents)
+1. Open an issue with a detailed proposal
+2. Discuss and agree on scope
+3. Send PRs in phases (interface first, implementation second)
+
+## Style
+
+- **Honesty first.** Never claim a behavior the code does not enforce, and report numbers with the model and data they were measured on.
+- **Keep the structured output schemas.** The judge's `VERDICT_SCHEMA` and the reflection's `REFLECTION_SCHEMA` are what the parsers rely on.
+- **No emojis in prompts or schemas.** They can disrupt parsing in edge cases.
+- **TypeScript strict.** No `any` without a reason, and exhaustive switches.
+- **Hooks exit 0.** A failure becomes an `error` event in the session log, never a failed prompt or tool call.
+
+## What we will reject
+
+- Cross-session memory that bypasses the session-local design
+- Prompt changes without benchmark evidence
+- Telemetry, or any data leaving the machine beyond the judge and reflection calls to the Anthropic API
+- State written outside the project's `.reflect/` directory
+- Hooks that block a prompt or a tool call (reflect observes; blocking is a different tool's job)
+- New runtime dependencies
+- PRs that raise per-call cost by more than 20% without a matching quality gain
 
 ## Governance
 
 - Solo maintainer (Chanjoong Kim) until traction warrants more
-- All decisions traceable via issues + PR comments
-- Ablation results published openly; no selective reporting
-
----
+- All decisions traceable through issues and PR comments
+- Benchmark results published openly, including the ones that went badly
 
 ## Code of Conduct
 
-Be direct. Be kind. Assume good faith. The project's own origin — a human iterating with an AI that kept proposing bad refactors — is a reminder that being wrong is normal.
+Be direct. Be kind. Assume good faith. The project's own origin (a human iterating with an AI that kept proposing bad refactors) is a reminder that being wrong is normal.
 
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for details.

@@ -5,7 +5,7 @@ session history, offline.
 
 Why this exists
 ---------------
-experiments/ablation-with-without.md deferred the efficacy ablation for a sound
+docs/v0.1/experiments/ablation-with-without.md deferred the efficacy ablation for a sound
 reason (N=2 self-experiment on one's own tool is unfalsifiable). But it left one
 hypothesis on the table, untested:
 

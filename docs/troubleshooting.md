@@ -1,228 +1,80 @@
 # Troubleshooting
 
-Common issues + fixes for reflect.
-
----
-
-## Setup
-
-### `ANTHROPIC_API_KEY is not set`
-1. Ensure `.env` exists in your project root
-2. `.env` contains: `ANTHROPIC_API_KEY=sk-ant-...`
-3. If using `npx reflect`, the env may not load — try `npm run reflect` or `dotenv -e .env npx reflect`
-
-### `npm install @chanjoongx/reflect` fails
-- Node 20+ required: `node --version`
-- Try `npm install --no-optional` if peer deps issue
-- If you see "404 Not Found for reflect" with no `@` prefix — you're using the unscoped name; it's a different (older) package by another author. Use `@chanjoongx/reflect` with the `@` prefix and the slash.
-
-### Hook doesn't fire after reverts
-1. Check `.claude/settings.json` exists with `hooks.PostToolUse` block
-2. Test hook manually:
-   ```bash
-   echo '{"tool_name":"Bash","tool_input":{"command":"git restore foo.ts"},"session_id":"test"}' | bash .claude/hooks/reflect-trigger.sh
-   ```
-3. Verify hook executable: `ls -la .claude/hooks/reflect-trigger.sh` should show `x` permissions
-
-### `jq: command not found` in hook output
-Windows git-bash typically lacks `jq` and `bc`. As of D2, reflect's bash hook uses pure-bash integer arithmetic (cumulative weight stored as `cum_x100`, an integer × 100 so no `bc` needed) and `grep`/`sed` fallbacks — `jq` is NOT required. A `jq: command not found` line in logs means the hook has silently fallen back and state should still update. Verify: `cat .reflect/state.json` after a few tool calls should show `turn_count > 0` and a non-zero `cum_x100` after a revert.
-
-### Path-scoped rule not loading
-- Check `.claude/rules/reflect-rules.md` exists
-- Check the `paths:` frontmatter matches your file paths
-- Restart Claude Code (rules load at session start)
-
----
-
-## Triggering
-
-### What are the signal tiers?
-
-reflect's revert-detector taxonomy. Each weight sums into `cum_x100` (integer × 100) until the threshold (default 240 = 2.4) fires, then resets. Cooldown 5 turns.
-
-- **Tier 1 (weight 1.0 → +100)** — Hard deterministic signal: `git restore`, `git revert`, `git checkout HEAD --`, file delete, `/undo`. Matched by the **PostToolUse** hook (`.claude/hooks/reflect-trigger.sh`).
-- **Tier 2 (weight 0.7 → +70)** — Inferred semantic inversion: two Edits to the same file within 5 turns whose diffs approximately undo each other. Matched by the **PostToolUse** hook.
-- **Tier 3 (weight 0.5 → +50)** — User utterance: conservative regex on the user's prompt matching explicit negation (`"no wait"`, `"undo that"`, `"revert that"`, `"stop—"`). Matched by the **UserPromptSubmit** hook (`.claude/hooks/reflect-utterance.sh`), NOT PostToolUse. Positive-negation phrases (`"you were right"`, `"good point"`, `"makes sense"`) short-circuit to avoid false positives.
-
-Check cumulative state: `cat .reflect/state.json` → `cum_x100`.
-
-### Reflection never fires
-- Check signal accumulation: `cat .reflect/state.json` after a few reverts
-- If `signals` array is empty, hook isn't detecting reverts
-- Try lower threshold: `REFLECT_TRIGGER_THRESHOLD=1.5 npx reflect manual`
-
-### Reflection fires too often
-- Raise `REFLECT_TRIGGER_THRESHOLD` to 3.0+
-- Raise `REFLECT_COOLDOWN_TURNS` to 10+
-
-### Manual `/brain-reflect` doesn't work
-
-The `/brain-reflect` slash command is registered when Claude Code can find the plugin's `commands/brain-reflect.md`. Two install patterns:
-
-**(A) Plugin pattern** (Anthropic marketplace, or via `claude --plugin-dir`):
-- Plugin manifest at `.claude-plugin/plugin.json` auto-detects `commands/`, `agents/`, and `hooks/hooks.json` from the plugin root — no manual `cp` to `.claude/` needed.
-- Local dev verify: `claude --plugin-dir ./node_modules/@chanjoongx/reflect`
-
-**(B) Standalone pattern** (default for npm install before marketplace install is available):
-- Copy the slash command + subagent into your project:
-  ```bash
-  mkdir -p .claude/commands .claude/agents
-  cp node_modules/@chanjoongx/reflect/commands/brain-reflect.md .claude/commands/
-  cp node_modules/@chanjoongx/reflect/agents/reflection-orchestrator.md .claude/agents/
-  ```
-- Verify: `ls .claude/commands/brain-reflect.md` and `ls .claude/agents/reflection-orchestrator.md`
-- Restart Claude Code (commands + agents load at session start)
-
----
-
-## API issues
-
-### 400 — `thinking.budget_tokens not supported`
-You're hitting Opus 4.7 with old API shape. reflect's `src/opus-reflection.ts` uses `{ type: "adaptive" }` correctly. If you see this, you may have an outdated SDK or local override.
+Start with these two commands, run from the project's root directory:
 
 ```bash
-npm install @anthropic-ai/sdk@latest
+npx @chanjoongx/reflect doctor
+npx @chanjoongx/reflect status
 ```
 
-### 400 — `temperature not supported`
-Same as above — you're setting non-default sampling. reflect doesn't set sampling params. Check for environment variable or override.
+`doctor` checks node, credentials, the hook bundle (only when run inside the plugin), whether reflect is enabled here and whether `.reflect/` is ignored by git. It exits 1 if node, the bundle, the enabled check or the `.gitignore` check fails. `status` reads the latest session's event log. Without the plugin, drop `npx @chanjoongx/` if you installed the package globally.
 
-### 429 — rate limit
-- reflect doesn't have built-in retry yet (v1.1 TODO)
-- Workaround: increase cooldown to space out triggers
+## Nothing seems to happen
 
-### Reflection JSON parse fails
-- Set `REFLECT_DEBUG=1` and inspect stderr
-- Opus 4.7 may occasionally wrap output in fences — parser handles this
-- If still failing, the model may have hit max_tokens — increase `maxOutputTokens` in code
+**`reflect: no session recorded in this project yet.`** The hooks have not written anything here. Check that the plugin is installed and enabled (`/plugin`), that `node` 20 or later is on the `PATH` Claude Code runs with, and that you ran `status` from the same directory Claude Code was opened in. The hooks write under `CLAUDE_PROJECT_DIR`, or the session's working directory when that is not set.
 
----
+**``reflect is OFF for this project (`reflect on` to re-enable).``** Someone ran `reflect off`, which created `.reflect/disabled`. Run `reflect on`. If `REFLECT_DISABLED=1` is set in the environment, every hook is a no-op regardless.
 
-## Cost surprises
+**`judged` stays at 0 and `skipped` goes up.** The first message of a session is never judged, because there is no agent turn yet to push back on. Neither is a message sent before the agent replied to the previous one. Both are logged as `skip` events with reason `session_opener` or `consecutive_user_message`. If every message is skipped, look at the `errors` line instead.
 
-### Daily cost > $1
-- Check if trigger threshold too low
-- Check if cooldown not decrementing (`.reflect/state.json`)
-- See `docs/api-cost-economics.md` for tuning
+**Pushback is recorded but no note arrives.** The default policy `k2w6` needs 2 pushback verdicts within 6 of your messages, and after a fire it waits 3 messages before it can fire again. The judge also misses about half of real pushback in the benchmark, mostly by reading a correction as a new instruction ([`bench/FINDINGS.md`](../bench/FINDINGS.md) §9). To get a note now, run `/reflect:brain-reflect`. To see the trigger fire on every pushback, set `REFLECT_POLICY=each`.
 
-### Cache hit rate stays at 0%
-- First call always 0% (cold)
-- If still 0% after multiple calls in same hour:
-  - Check L1 ≥ 4096 tokens (Opus 4.7 floor)
-  - Verify `usage.cache_creation_input_tokens > 0` on first call
-  - Check session_id consistency in `.reflect/state.json`
+## The `errors` line
 
----
+`status` shows the count and the last error, as `errors  N (last, in <where>: <message>)`. Messages are redacted and cut at 400 characters.
 
-## API key management
+| where | what it means | what to do |
+|---|---|---|
+| `auth` | The judge got a 401 or 403, or found no credentials at all. After this the hooks make no more API calls in the session. | Fix the key (see below) and start a new session. |
+| `judge` | The judge call failed for another reason: a timeout (30 s, 2 retries), a rate limit or server error that outlasted the retries, `judge refused (...)`, or `judge returned no text (stop_reason=...)`. That message is not judged; the next one is tried normally. | Usually nothing. If it repeats, check the Anthropic status page and your rate limits. |
+| `reflection` | The reflection call failed: `reflection declined by the model`, `reflection returned no text (stop_reason=...)`, a schema parse error, or a network error. The fire is recorded but no note is written. | Run `/reflect:brain-reflect` to try again by hand. |
+| `prompt`, `tool`, `session-start` | Something failed inside a hook that does not call the API, almost always a file under `.reflect/` that could not be read or written. | Check that the project directory is writable. |
 
-### Best practices
-- Store key only in `.env` (never commit)
-- `.gitignore` includes `.env` (verify with `git check-ignore .env`)
-- Rotate key if exposed: platform.claude.com → API Keys → create new + delete old
-- For team: each member uses own key (not a shared one)
+A hook never fails your turn. Every error ends up in this log and nowhere else, so `status` is the place to look.
 
-### If key is exposed
-1. **Immediately**: rotate at platform.claude.com (delete + recreate)
-2. Update `.env` with new key
-3. If pushed to public repo: BFG repo-cleaner or `git filter-repo` to scrub history
-4. Force push (only if no provenance attestations affected)
-5. Check Anthropic dashboard for unexpected usage
+## Credentials
 
----
+The key is taken from the first of these that is set:
 
-## Storage / filesystem
+1. `ANTHROPIC_API_KEY` in the environment Claude Code runs in.
+2. `ANTHROPIC_API_KEY` in the project's `.env`. reflect reads only `ANTHROPIC_API_KEY` and `REFLECT_*` lines from that file and never overrides a value the environment already has.
+3. The plugin's Anthropic API key setting.
+4. Whatever the Anthropic SDK finds on its own, such as an `ant auth login` profile.
 
-### `.reflect/` directory not writable
-- Hook needs write access to project root
-- On Windows: ensure no antivirus blocking
-- Workaround: `mkdir -p .reflect && chmod 755 .reflect`
+A Claude subscription login is not on that list. With only a subscription, the judge logs an `auth` error and the automatic path stays off; `/reflect:brain-reflect` still works because the agent writes the reflection itself.
 
-### `.reflect/state.json` corrupted
-- Delete it: `rm .reflect/state.json`
-- Hook will recreate on next call
+`doctor` run from a terminal cannot see the plugin setting or an `ant auth login` profile, so it may print `warn  credentials  none in env; ...` while the hooks have a key. The `status` output after a few messages is the real test: verdicts and no `auth` error mean the key works.
 
-### Session-log.jsonl growing too large
-- Default opt-in only (`REFLECT_LOG_ENABLED=1`)
-- Auto-pruned at 168h
-- Manual prune: `npx reflect log --prune`
+## Spend
 
----
+**`spent $<amount> of $0.5000 cap`, and nothing new is judged.** The session reached its cap and a `skip` event with reason `budget` was logged. Raise the cap with the plugin setting or `REFLECT_MAX_USD_PER_SESSION`; the environment variable wins when both are set. A negative or non-numeric value falls back to 0.5, and 0 stops all API calls.
 
-## Conflict with stetkeep
+**The total is a little over the cap.** The cap is checked before each judge call and before each reflection. Judge calls that were already running when the cap was reached still finish. `reflect manual` and `/reflect:brain-reflect` do not check the cap at all, though their cost counts toward it.
 
-### Both reflect and stetkeep installed — which fires first?
-- stetkeep = PreToolUse (before tool runs)
-- reflect = PostToolUse (after tool runs)
-- They never conflict. Order: stetkeep blocks → tool runs (or doesn't) → reflect observes
+**Spend looks high for a custom model.** Costs come from the price table in `src/pricing.ts`. A `REFLECT_MODEL` or `REFLECT_JUDGE_MODEL` that the table does not list is charged at the table's highest rate, so the cap still stops it. Add the model's prices to the table if you want an accurate figure.
 
-### stetkeep blocks an edit, does reflect see it?
-No. If stetkeep blocks, the tool doesn't run, and PostToolUse doesn't fire. reflect simply doesn't see a signal.
+Expected costs are in [cost.md](cost.md).
 
-This is correct behavior — reflect should only react to actual revert events.
+## The note arrived late, or more than once
 
----
+The judge runs asynchronously so it never delays your prompt. The note for a message therefore reaches the agent at its next tool call, which is usually partway through its answer to that same message. If the agent answers without using tools, the note waits for your next message.
 
-## Windows-specific
+Each note is delivered once, even when the agent runs several tools in parallel, and never into a subagent's context. It is delivered again only if Claude Code compacts or resumes the session while the note is still in force, because compaction rewrites the context it was delivered into. After `expires_after_turns` of your messages (3 to 12, chosen by the reflection model) it is dropped.
 
-### PowerShell ExecutionPolicy
-```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
+## Too many notes, or wrong ones
 
-Or use `npx reflect` which bypasses policy.
+Every note carries the reviewer's confidence, a false-trigger likelihood and its best guess at how it could be wrong. When confidence is low or the false-trigger likelihood is high, the agent is told to ask you before acting on it. To fire less often, set `REFLECT_POLICY=k3w8` (3 pushbacks in 8 messages) or `k2w6-med` (ignores low-confidence verdicts). `reflect off` stops everything in this project.
 
-### Bash script doesn't work
-On native Windows, use `.ps1` version:
-```json
-"command": "powershell -File $CLAUDE_PROJECT_DIR/.claude/hooks/reflect-trigger.ps1"
-```
+## Upgrading from 0.1
 
-### Git Bash routing
-Native `bash` in PowerShell may route to WSL. Solution: use Git Bash directly, or use `.ps1` hook.
+0.2 does not use any of the files 0.1 asked you to set up. Remove these by hand:
 
----
+- Hook entries in `.claude/settings.json` that run `reflect-trigger.sh`, `reflect-trigger.ps1`, `reflect-utterance.sh` or `reflect-utterance.ps1`, and the SessionStart entry that echoes `reflect active.` The scripts they point at no longer exist.
+- `.claude/rules/reflect-rules.md`.
+- Old files in `.reflect/` such as `state.json`, `trigger.log` and `session-log.jsonl`. 0.2 keeps its own log under `.reflect/sessions/`.
 
-## Performance
-
-### Hook adds noticeable latency to tool calls
-The hook itself is fast (<100ms). The reflection call (when triggered) runs **in background** — doesn't block.
-If hook itself is slow:
-- Check `jq` is installed (otherwise grep fallback is slower)
-- Check disk I/O on `.reflect/state.json`
-
-### Reflection takes 10+ seconds
-Opus 4.7 with `effort: high` typically 2-5s. If slower:
-- Check network
-- Verify region (use closest API endpoint)
-- Try `effort: medium` for faster response
-
----
-
-## Privacy / data
-
-### What does reflect send to Anthropic?
-- The 3 prompt layers (L1 + L2 + L3)
-- Recent tool calls (truncated string fields)
-- Rolled-back diff (if available)
-- Active rules content (CLAUDE.md, .claude/rules/*.md)
-
-NOT sent:
-- Files outside the project root
-- API keys, secrets, environment variables (unless they appear in tool calls)
-- Historical session data (each call is independent)
-
-### Can I see what was sent?
-Set `REFLECT_DEBUG=1` and the SDK may log requests. Or set up an HTTP proxy to inspect.
-
----
+An `ANTHROPIC_API_KEY` line in the project's `.env` still works.
 
 ## Asking for help
 
-If your issue isn't covered:
-- Search existing issues: https://github.com/chanjoongx/reflect/issues
-- Open a new issue with:
-  - Output of `npx reflect status`
-  - Contents of `.reflect/state.json` (redact session_id if private)
-  - Hook output: `REFLECT_DEBUG=1 bash .claude/hooks/reflect-trigger.sh < test-input.json`
-  - Expected vs actual behavior
+Open an issue at [github.com/chanjoongx/reflect/issues](https://github.com/chanjoongx/reflect/issues) with the output of `reflect doctor` and `reflect status`. Both can include your project path and session id, so trim what you do not want public. For security problems, follow [SECURITY.md](../SECURITY.md) instead.

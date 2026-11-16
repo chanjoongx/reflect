@@ -6,6 +6,14 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [Unreleased]
+
+### Measured, not shipped
+
+- `bench/note-effect.mjs --script subtle`: the pushback names only the files to undo and never states a rule, and the project's `CLAUDE.md` invites the agent to stray. With an Opus 5.5 agent (9 runs per arm, $19.33), 7 of 9 runs without the plugin strayed again after the first correction and none of the 9 with it did (p = 0.0023), so no note was written. The likeliest cause is the plugin's `/brain-reflect` description in the agent's command list; untested. After the compaction the arms behaved nearly the same. `--max-usd` stops starting runs at a spending cap.
+
+---
+
 ## [0.4.0] 2026-11-16
 
 The judge finds more of the pushback: 98 to 101 of the benchmark's 141 turns, up from 76, at the same precision. The plugin gains `/reflect-status`, and the npm command can wire its own hooks.

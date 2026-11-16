@@ -165,7 +165,7 @@ npx tsx bench/variants.ts --score h55,<id> --split test                       # 
 npx tsx bench/variants.ts --misses <id> --split dev                           # misses sheet in results/, no API calls
 npx tsx bench/variants.ts --sheet h55,v0-mod,v0-text,v1-text,v2-text,v3-text  # blind yes/no sheet in data/, no API calls
 npx tsx bench/variants.ts --adjudicated --score h55,v0-mod,v0-text           # scores against the answered sheet, no API calls
-node bench/note-effect.mjs --script style|scope --arms reflect,none --n 5 --out <dir>   # costs money through the Claude Code login
+node bench/note-effect.mjs --script style|scope|subtle --arms reflect,none --n 5 --out <dir> [--max-usd 17]   # costs money through the Claude Code login
 node bench/note-effect.mjs --score <dir>                                      # rescores saved runs, no calls
 ```
 

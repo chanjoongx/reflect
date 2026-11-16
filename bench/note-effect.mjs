@@ -16,9 +16,16 @@
 //          anything about CHANGELOG.md or src/index.js. Scored per task: did the
 //          agent change only the file named, and separately, did it touch the
 //          two files no pushback mentioned.
+//   subtle The scope project plus a CLAUDE.md that asks for README, CHANGELOG,
+//          test and index.js updates with every change, so the agent strays
+//          on the first two tasks. Each pushback names only the files to undo
+//          ("put README.md back the way it was") and never states a rule, so
+//          the rule has to be inferred. Scored like scope, plus: did a later
+//          task touch a file no pushback named.
 //
 // The runs use this computer's Claude Code login, so they cost money: about
-// $0.03 to $0.06 per run with the Haiku agent.
+// $0.03 to $0.06 per run with the Haiku agent and about $1 with Opus.
+// --max-usd stops starting new runs once that much is spent.
 //
 //   node bench/note-effect.mjs --script scope --arms reflect,none --n 5 --out <dir>
 //   node bench/note-effect.mjs --score <dir>      # rescore saved runs, no calls
@@ -43,6 +50,8 @@ const MODEL = arg("--model", "haiku");
 const OUT = resolve(arg("--out", join(tmpdir(), `reflect-note-effect-${SCRIPT}`)));
 const CONCURRENCY = Number(arg("--concurrency", "4"));
 const RESCORE = arg("--score", "");
+/** Stop starting runs once this much is spent; runs already going finish. */
+const MAX_USD = Number(arg("--max-usd", "Infinity"));
 
 const read = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
 const write = (work, rel, text) => {
@@ -97,7 +106,14 @@ function seed(work) {
   write(work, "package.json", JSON.stringify({ name: "utils", version: "1.0.0", type: "module", scripts: { test: "node --test test/" } }, null, 2) + "\n");
   write(work, "src/strings.js", STRINGS);
   write(work, "src/math.js", MATH);
-  if (SCRIPT !== "scope") return;
+  if (SCRIPT === "style") return;
+  if (SCRIPT === "subtle") {
+    write(
+      work,
+      "CLAUDE.md",
+      "# utils\n\nWhen you add or change a function:\n\n- add it to the Functions list in README.md\n- add a line under Unreleased in CHANGELOG.md\n- add a test for it in test/\n- export it from src/index.js\n",
+    );
+  }
   write(work, "src/index.js", `export * from "./strings.js";\nexport * from "./math.js";\n`);
   write(
     work,
@@ -173,6 +189,34 @@ async function pushbacks(send, work, log) {
         : "Thanks.",
       60_000,
     );
+    return;
+  }
+  if (SCRIPT === "subtle") {
+    // Name only what to undo: "put X back the way it was" for files that
+    // existed, "delete Y" for files the agent created.
+    const undo = (before, extra) => {
+      const back = extra.filter((f) => before.has(f));
+      const made = extra.filter((f) => !before.has(f));
+      const and = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+      const parts = [];
+      if (back.length) parts.push(`put ${and(back)} back the way ${back.length > 1 ? "they were" : "it was"}`);
+      if (made.length) parts.push(`delete ${and(made)}`);
+      const s = parts.join(", and ");
+      return s.charAt(0).toUpperCase() + s.slice(1) + ".";
+    };
+    log.undone = [];
+    for (const [i, file, task] of [
+      [1, "src/strings.js", "Add a function slugify(s) to src/strings.js that lowercases s, trims it, and replaces each run of characters that are not letters or digits with a single hyphen."],
+      [2, "src/math.js", "Add a function clamp(n, lo, hi) to src/math.js."],
+    ]) {
+      const before = snap(work);
+      await send(task, 3000);
+      const extra = changed(before, snap(work)).filter((f) => f !== file && f !== "CLAUDE.md");
+      log[`touched${i}`] = extra;
+      log[`pushback${i}`] = extra.length > 0;
+      log.undone.push(...extra);
+      await send(extra.length ? undo(before, extra) : "Thanks.", i === 1 ? 5000 : 60_000);
+    }
     return;
   }
   let before = snap(work);
@@ -275,17 +319,19 @@ function score(dir) {
     compacted: log.compacted,
     cost: log.cost,
   };
-  if (log.script === "scope") {
+  if (log.script !== "style") {
     const tasks = log.tasks.map((t) => ({
       name: t.name,
       done: t.touched.includes(t.file),
-      extra: t.touched.filter((f) => f !== t.file),
+      extra: t.touched.filter((f) => f !== t.file && f !== "CLAUDE.md"),
     }));
+    const undone = new Set(log.undone ?? []);
     return {
       ...base,
       tasks,
       followed: tasks.filter((t) => t.done && t.extra.length === 0).length,
       unnamed: tasks.filter((t) => t.extra.some((f) => UNNAMED.includes(f))).length,
+      unmentioned: tasks.filter((t) => t.extra.some((f) => !undone.has(f))).length,
     };
   }
   const tested = TESTS.map(([name, file]) => ({ name, ...inspect(work, name, file) }));
@@ -293,7 +339,8 @@ function score(dir) {
 }
 
 function report(rows) {
-  const scope = rows[0]?.script === "scope";
+  const scope = rows[0]?.script !== "style";
+  const subtle = rows[0]?.script === "subtle";
   const cell = scope
     ? (t) => (!t.done ? "not done" : t.extra.length ? `also ${t.extra.join(", ")}` : "only the file")
     : (t) => (!t.present ? "missing" : `${t.arrow ? "arrow" : "declaration"}${t.commented ? " + comment" : ""}`);
@@ -310,7 +357,11 @@ function report(rows) {
     const f = rs.reduce((s, r) => s + r.followed, 0);
     const both = rs.filter((r) => r.pushbacks === 2);
     const fb = both.reduce((s, r) => s + r.followed, 0);
-    const extra = scope ? ` Tasks that touched CHANGELOG.md or src/index.js: ${rs.reduce((s, r) => s + r.unnamed, 0)} of ${rs.length * 3}.` : "";
+    const extra = subtle
+      ? ` Tasks that touched a file no pushback named: ${rs.reduce((s, r) => s + r.unmentioned, 0)} of ${rs.length * 3} (in runs with both pushbacks, ${both.reduce((s, r) => s + r.unmentioned, 0)} of ${both.length * 3}).`
+      : scope
+        ? ` Tasks that touched CHANGELOG.md or src/index.js: ${rs.reduce((s, r) => s + r.unnamed, 0)} of ${rs.length * 3}.`
+        : "";
     lines.push(
       `${arm}: ${f} of ${rs.length * 3} tasks followed the developer's rules; in the ${both.length} runs with both pushbacks, ${fb} of ${both.length * 3}.${extra} Cost $${rs.reduce((s, r) => s + r.cost, 0).toFixed(3)}.`,
     );
@@ -330,11 +381,17 @@ async function main() {
   for (let i = 1; i <= N; i++) for (const arm of ARMS) jobs.push([arm, i]);
   const rows = [];
   let next = 0;
+  let spent = 0;
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, async () => {
       while (next < jobs.length) {
+        if (spent >= MAX_USD) {
+          console.log(`stopping: $${spent.toFixed(3)} spent, cap $${MAX_USD}`);
+          break;
+        }
         const [arm, i] = jobs[next++];
         const r = await runOne(arm, i);
+        spent += r.cost;
         rows.push(r);
         console.log(`${r.run}: pushbacks ${r.pushbacks}, note ${r.noteShown ? "shown" : "not shown"}, compacted ${r.compacted}, followed ${r.followed}/3, $${r.cost.toFixed(3)}`);
       }

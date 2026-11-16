@@ -528,7 +528,31 @@ Haiku 5.5 is the agent unless stated.
 In these sessions the note had nothing left to fix. A rule the developer states outright survives
 the compaction summary, and Opus drew the general rule from two specific corrections by itself.
 The case reflect was built for, a long session where the pushback is implicit, spread out and
-mixed with other work, is not covered by either script. Opus runs cost about $0.9 each at list
-prices and stray only some of the time, so a comparison with enough runs to show a difference
-would cost on the order of $20. That has not been run. These runs cost $2.66 in all, on the
+mixed with other work, is not covered by either script. These runs cost $2.66 in all, on the
 Claude Code login of the machine that ran them.
+
+- **subtle (Opus 5.5, 9 runs per arm).** The scope project plus a `CLAUDE.md` that asks for a
+  README entry, a CHANGELOG line, a test and an `index.js` export with every new function, so the
+  agent strays on its own. Each pushback names only the files to undo ("Put CHANGELOG.md,
+  README.md and test/strings.test.js back the way they were.") and never states a rule. The run
+  stopped starting sessions at a $17 cap and spent $19.33 ($10.11 without the plugin, $9.22 with
+  it). A one-run Haiku pilot ($0.066) drew both pushbacks and a note that named the CLAUDE.md
+  checklist as the cause.
+
+  With the first function, all 18 runs edited CHANGELOG, README and a test and drew the first
+  pushback. With the second, 7 of 9 runs without the plugin did it again and drew the second
+  pushback; none of the 9 runs with the plugin did (Fisher's exact test, two-sided, p = 0.0023).
+  So no run with the plugin reached two pushbacks, and no note was written. After the compaction
+  the arms did nearly the same thing: `capitalize` and `lerp` touched only the named file in all 18
+  runs, and `chunk` also added the new module to `src/index.js` in all 9 runs without the plugin
+  and 8 of 9 with it, a file no pushback named and the CLAUDE.md asks for.
+
+  Before a note, the plugin adds nothing to the conversation. It does add two entries to the
+  command list the agent sees: `/chanjoongx-reflect:brain-reflect`, described as "Step back and
+  look at why the developer keeps pushing back in this session", and `/reflect-status`. That
+  description is the likeliest cause of the difference on the second function. It is untested:
+  separating it needs a third arm that loads the command list without the hooks. If it holds,
+  the plugin's command text changed what the agent did and its note did not get the chance.
+
+Across the three scripts the note has not been shown to change anything. Run
+`node bench/note-effect.mjs --score <dir>` on a saved run folder to rescore it without calls.

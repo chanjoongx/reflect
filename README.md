@@ -165,7 +165,7 @@ npm run smoke          # runs the npm bundle the way hand-wired hooks run it
 claude --plugin-dir ./plugin  # try the working copy in a session
 ```
 
-Claude Code installs only `plugin/`, and that folder is also what Anthropic's plugin directory reviews. The source, the benchmark, the viewer and the docs stay out of it. The plugin's module, `plugin/hooks/reflect.ts`, is generated from `src/mod/reflect.ts` and the `src/` modules it imports, without minification. The npm command is built from `src/entry.ts` into `dist/`, which is not committed. The committed module must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
+Claude Code installs only `plugin/`. The source, the benchmark, the viewer and the docs stay out of it. The plugin's module, `plugin/hooks/reflect.ts`, is generated from `src/mod/reflect.ts` and the `src/` modules it imports, without minification. The npm command is built from `src/entry.ts` into `dist/`, which is not committed. The committed module must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
 
 ## License
 

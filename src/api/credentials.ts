@@ -1,10 +1,9 @@
 // src/api/credentials.ts: where the reflect CLI looks for a key. No SDK import,
 // so the hooks that only deliver guidance can call it cheaply.
 //
-// The installed plugin does not use this file: its bundle swaps in
-// ./credentials.plugin.ts, which reads the plugin's own setting and nothing else
-// (scripts/build-hook.mjs). What follows is for the npm CLI and for hooks wired
-// into settings.json by hand.
+// The installed plugin does not use this file: it is a mod that calls models
+// through Claude Code and holds no key. What follows is for the npm CLI and for
+// hooks wired into settings.json by hand.
 //
 // Run that way, reflect accepts ANTHROPIC_API_KEY from the environment (or the
 // project's .env, loaded by withProjectEnv in ../hook/project-env.ts) and

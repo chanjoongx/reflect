@@ -26,9 +26,9 @@ jobs:
       - run: npm ci
       - name: Typecheck and unit tests (no API calls; the model is faked)
         run: npm test
-      - name: Committed hook bundle matches src/
+      - name: plugin/hooks/reflect.ts matches src/ and passes the plugin rules
         run: npm run check:bundle
-      - name: Bundle runs under plain node, as Claude Code runs it
+      - name: The npm command runs under plain node, as hand-wired hooks run it
         run: npm run smoke
       - name: src/redact.ts matches the viewer's copy
         if: runner.os == 'Linux'

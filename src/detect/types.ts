@@ -1,4 +1,4 @@
-// src/detect/types.ts — correction-detection domain types (v2)
+// src/detect/types.ts: correction-detection domain types (v2)
 //
 // The unit of detection is a PAIR, not an utterance. This is the direct
 // consequence of evals/FINDINGS.md §5: the same string is an instruction at
@@ -28,7 +28,7 @@ export interface PriorTurn {
 }
 
 /**
- * (prior assistant turn, user prompt) — the relational unit a correction
+ * (prior assistant turn, user prompt): the relational unit a correction
  * judge operates on.
  */
 export interface Pair {
@@ -46,7 +46,7 @@ export interface Pair {
   sidechain: boolean;
 }
 
-// ─── Labels — SWE-chat taxonomy (arXiv 2604.20779) ────────────────────
+// ─── Labels: SWE-chat taxonomy (arXiv 2604.20779) ────────────────────
 //
 // Adopted verbatim so results are directly comparable to a published
 // benchmark rather than to a private schema.
@@ -80,11 +80,11 @@ export interface LabeledPair {
   confidence: "low" | "medium" | "high";
   /** Verbatim span from the prompt that drove the label; "" when none. */
   evidence: string;
-  /** One clause of reasoning — kept for human audit, not for scoring. */
+  /** One clause of reasoning, kept for human audit, not for scoring. */
   rationale: string;
 }
 
-// ─── Stage A — structural gate ────────────────────────────────────────
+// ─── Stage A: structural gate ────────────────────────────────────────
 
 export interface StructuralFeatures {
   hasPriorTurn: boolean;
@@ -116,7 +116,7 @@ export interface GateResult {
   features: StructuralFeatures;
 }
 
-// ─── Stage C — relational judge ───────────────────────────────────────
+// ─── Stage C: relational judge ───────────────────────────────────────
 
 export interface JudgeVerdict {
   label: Label;

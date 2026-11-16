@@ -131,3 +131,6 @@ bench/results/
 evals/out/
 evals/out2/
 evals/__pycache__/
+
+# Claude Code lays a loaded mod's types here when it runs the plugin from this folder.
+plugin/.claude-plugin/types/

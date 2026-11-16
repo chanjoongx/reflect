@@ -1,13 +1,12 @@
 // src/api/client.ts: one place that builds the Anthropic SDK client and decides
 // how much of the SDK reflect loads.
 //
-// The key and base URL come from sdkAuth in ./credentials.ts, which the
-// plugin's bundle replaces with ./credentials.plugin.ts. As a plugin, the key is
-// the plugin's setting and the base URL is pinned to the Anthropic API.
+// The key and base URL come from sdkAuth in ./credentials.ts. The plugin does
+// not use this file: it is a mod and calls models through Claude Code.
 //
 // The SDK comes in three pieces loaded with import(): the client core, the
-// Messages API and the beta Messages API. Bundled that way, no file under
-// plugin/hooks/lib passes 256 KiB, where the whole SDK would be one 1 MB file.
+// Messages API and the beta Messages API, so a hook that calls no model never
+// parses the SDK.
 //
 // Nothing here prints, logs or persists a credential.
 

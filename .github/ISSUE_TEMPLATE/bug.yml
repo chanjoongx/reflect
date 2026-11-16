@@ -12,7 +12,7 @@ body:
     attributes:
       label: reflect version
       description: Output of `reflect --version` (or `npx @chanjoongx/reflect --version`)
-      placeholder: "0.2.3"
+      placeholder: "0.3.0"
     validations:
       required: true
   - type: input

@@ -8,7 +8,7 @@ The contributions that help most right now are cases where reflect got it wrong,
 
 Use the [reflection quality issue template](.github/ISSUE_TEMPLATE/reflection_quality.yml). Useful reports include:
 
-- a message the judge called pushback that was not, or real pushback it missed (copy the `verdict` line from `.reflect/sessions/<id>/events.jsonl`, after removing anything private);
+- a message the judge called pushback that was not, or real pushback it missed (with the npm command, copy the `verdict` line from `.reflect/sessions/<id>/events.jsonl`, after removing anything private; the plugin keeps no record, so describe the message and what the agent had just done);
 - a note that was generic, wrong or harmful, with what it should have said.
 
 The benchmark behind reflect's numbers comes from one developer's sessions, so cases from other people and other languages are worth more than anything else here.
@@ -19,7 +19,7 @@ The benchmark behind reflect's numbers comes from one developer's sessions, so c
 
 ### 3. Changes to the judge or the reflection prompt
 
-The judge's rubric and rendering are part of `judgeFingerprint()` in `src/detect/judge.ts`. Changing them invalidates every cached label, so a rubric change needs new benchmark numbers in the PR (precision, recall and F0.5 per turn, plus the session replay from `npm run bench:sim`). A change to the reflection prompt in `src/reflect/reflection.ts` needs before-and-after notes on the same pushback turns.
+The judge's rubric and rendering are part of `judgeFingerprint()` in `src/detect/judge-prompt.ts`. Changing them invalidates every cached label, so a rubric change needs new benchmark numbers in the PR (precision, recall and F0.5 per turn, plus the session replay from `npm run bench:sim`). A change to the reflection prompt in `src/reflect/reflection-prompt.ts` needs before-and-after notes on the same pushback turns. Both prompts go into the plugin's module and the npm command alike.
 
 PRs that change either prompt without that evidence are unlikely to merge.
 
@@ -29,23 +29,26 @@ PRs that change either prompt without that evidence are unlikely to merge.
 git clone https://github.com/<your-username>/reflect.git
 cd reflect
 npm install
-npm test               # typecheck and node:test, 143 tests; the model calls are faked
-npm run build          # bundles src/ into plugin/hooks/ (the plugin) and dist/ (the npm command)
-npm run check:bundle   # fails if the committed bundle does not match src/
-npm run smoke          # runs both bundles under plain node, as Claude Code and npm do, with no API key
+npm test               # typecheck and node:test, 157 tests; the model calls are faked
+npm run build          # writes plugin/hooks/reflect.ts (the plugin) and dist/ (the npm command)
+npm run check:bundle   # fails if plugin/hooks/reflect.ts is stale or the plugin breaks a rule
+npm run smoke          # runs the npm bundle under plain node, as hand-wired hooks run it, with no API key
 npm run mirror-check   # src/redact.ts must match web/lib/redact.ts
 ```
 
-To try your working copy in a real session, run `claude --plugin-dir ./plugin` from the repository root. Hooks wired by hand in a gitignored `.claude/settings.json` should point at `dist/reflect.mjs` after `npm run build`: the plugin's bundle reads its key only from the plugin's settings.
+The mod's tests are in `src/mod/reflect.test.ts` and run it against a fake engine.
 
-None of these commands calls the API. To exercise the judge or the reflection for real, enter a key in the plugin's settings, or put one in your environment when you wire the hooks by hand; the cost lands on that key.
+To try your working copy in a real session, run `claude --plugin-dir ./plugin` from the repository root. Claude Code may lay type files in `plugin/.claude-plugin/types/` when it loads the mod; that folder is gitignored. Hooks wired by hand in a gitignored `.claude/settings.json` should point at `dist/reflect.mjs` after `npm run build`. The plugin's module is not a command and cannot be wired that way.
 
-### Rules for the bundle
+None of these commands calls a model. A session started with `--plugin-dir` sends the plugin's calls through that session, and they count toward its cost. With hooks wired by hand, put a key in your environment; the cost lands on that key.
 
-- Edit `src/`. Never edit `plugin/hooks/reflect-hook.mjs` or `plugin/hooks/lib/` by hand.
-- After any change under `src/`, run `npm run build` and commit the rebuilt bundle with the source change. A plugin install copies `plugin/` with no build step, so the committed bundle is what users run. CI runs `check:bundle` and fails on a stale one.
-- The package has no runtime dependencies. The Anthropic SDK is bundled into chunks under `plugin/hooks/lib/` that only the judge and the reflection load. Keep it that way, because the `prompt` and `tool` hooks run on every message and tool call. No bundled file may reach 256 KiB; the build fails if one does.
-- The plugin's bundle starts at `src/plugin-entry.ts` and may read only the environment variables it names; the build checks the bundle against `PLUGIN_ENV` in `scripts/build-hook.mjs` and fails on any other read, on a shebang, and on the SDK's credential code. Code that the plugin's hooks reach must take its settings as an argument, not from `process.env`. The CLI (`src/cli/`) and the `.env` loader (`src/hook/project-env.ts`) are for the npm command only.
+### Rules for the plugin's module and the npm bundle
+
+- Edit `src/`. Never edit `plugin/hooks/reflect.ts` by hand: `npm run build` generates it from `src/mod/reflect.ts` and the `src/` modules it imports.
+- After any change under `src/`, run `npm run build` and commit the regenerated module with the source change. A plugin install copies `plugin/` with no build step, so the committed module is what users run. CI runs `check:bundle` and fails on a stale one.
+- The mod may import only `src/` modules. The build places each one before the modules that use it and removes its imports and export keywords, so the generated file is one scope: a name declared in two of those modules fails the build.
+- `check:bundle` also fails if any plugin file is outside Markdown, text, JSON, YAML and images plus the module, starts with `#!` or reaches 256 KiB, or if the module uses `process`, `Buffer`, `require`, `import()`, `node:` modules, `fetch`, `eval`, a URL, `$.fs`, `$.process`, `$.http` or `$.store`, transcript messages or a fork, calls an engine function other than `$.model.complete`, `$.clock.after`, `$.ui.log` and `$.session.usage`, or exports anything but `register`. Code that the mod reaches must take its settings as an argument, not from `process.env`. The CLI (`src/cli/`) and the `.env` loader (`src/hook/project-env.ts`) are for the npm command only.
+- The plugin bundles no third-party code, and the npm package has no runtime dependencies. In the npm command the Anthropic SDK is bundled into chunks under `dist/lib/` that only the judge and the reflection load. Keep it that way, because the `prompt` and `tool` hooks run on every message and tool call.
 - Keep everything the plugin runs inside `plugin/`, and keep `package.json` and `package-lock.json` out of it. When a plugin's root has both, Claude Code installs the lockfile's packages on every user's machine.
 - `src/redact.ts` is the canonical redactor and `web/lib/redact.ts` is a copy for the viewer. Edit the first and copy it over.
 - The version lives in `src/version.ts`, `package.json` and `plugin/.claude-plugin/plugin.json`. A test fails if they disagree.
@@ -75,16 +78,16 @@ CI (`.github/workflows/ci.yml`) runs `npm test`, `check:bundle` and `smoke` on U
 - **Keep the structured output schemas.** The judge's `VERDICT_SCHEMA` and the reflection's `REFLECTION_SCHEMA` are what the parsers rely on.
 - **No emojis in prompts or schemas.** They can disrupt parsing in edge cases.
 - **TypeScript strict.** No `any` without a reason, and exhaustive switches.
-- **Hooks exit 0.** A failure becomes an `error` event in the session log, never a failed prompt or tool call.
+- **Hooks never fail a turn.** In the npm command a failure becomes an `error` event in the session log, and every mode exits 0. In the mod, a hook that throws passes its event on unchanged.
 
 ## What we will reject
 
 - Cross-session memory that bypasses the session-local design
 - Prompt changes without benchmark evidence
-- Telemetry, or any data leaving the machine beyond the judge and reflection calls to the Anthropic API
-- State written outside the project's `.reflect/` directory
+- Telemetry, or any data leaving the machine beyond the judge and reflection calls (through the session's client in the plugin, to the Anthropic API in the npm command)
+- State the plugin writes to disk, or state the npm command writes outside the project's `.reflect/` directory
 - Hooks that block a prompt or a tool call (reflect observes; blocking is a different tool's job)
-- New runtime dependencies
+- New runtime dependencies, or third-party code in the plugin
 - PRs that raise per-call cost by more than 20% without a matching quality gain
 
 ## Governance

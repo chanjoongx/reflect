@@ -28,9 +28,9 @@ People rarely push back with git. They type "only the parser, please" or "that's
 
 ## What it does
 
-1. **Judges each message.** For every message you send after the agent's first reply, reflect takes the agent's previous turn (its tool calls and its final reply, which reflect's own hooks record as the turn happens) and asks Claude Haiku 5.5 one question: is this message a correction, a rejection or a failure report, or is it a normal instruction or question? This runs as a background hook and does not hold up your prompt.
+1. **Judges each message.** For every message you send after the agent's first reply, reflect takes the agent's previous turn (its tool calls and its final reply, which reflect records as the turn happens) and asks Claude Haiku 5.5 one question: is this message a correction, a rejection or a failure report, or is it a normal instruction or question? The judge runs on a timer after your message has gone through, so it never holds up your prompt.
 2. **Waits for a pattern.** One pushback is normal. When two land within six of your messages, Claude Opus 5.5 reads exactly those turns and writes a short note: what the agent keeps doing, what your pushback is about, what to change for the next few turns, and how the note could be wrong.
-3. **Tells the agent once.** The note arrives as hook context on the agent's next tool call or your next prompt. It stays in force for 3 to 12 turns and comes back after a compaction. When the reviewer is unsure, the note tells the agent to ask you before acting on it. Your own words always win.
+3. **Tells the agent once.** The note rides on the agent's next tool result or on your next message. It stays in force for 3 to 12 turns and comes back after a compaction. When the reviewer is unsure, the note tells the agent to ask you before acting on it. Your own words always win.
 
 This is what the agent sees (an example; the wording comes from the reviewer each time):
 
@@ -48,19 +48,19 @@ Apply the adjustment.
 The developer's own words in the current turn take precedence over this note.
 ```
 
-You see each note too. When the agent receives one, reflect shows you the whole note in your session.
+You see each note too. When the agent receives one, reflect adds the whole note to your transcript in a line that starts with "reflect sent the agent this note:".
 
-Everything reflect keeps is in `.reflect/` in your project, which ignores itself in git. The text of your messages is kept for the last 12 only, and the rest of a session's log (labels, notes, costs) is deleted after 7 days. reflect never opens the session transcript. Nothing is shared between sessions.
+The plugin writes nothing to disk. While the session runs it holds in memory the judge's labels, the redacted text of your last 12 judged messages with their summaries, the agent's current turn and the current note, and it drops all of it when the session ends. reflect never opens the session transcript. Nothing is shared between sessions. The npm command keeps the same things on disk, in `.reflect/` in your project, which ignores itself in git; there a session's log (labels, notes, costs) is deleted after 7 days.
 
 ## How well it works
 
-The benchmark is 837 turns from 224 of my own Claude Code sessions, collected in August 2026 and labelled by Claude Opus 5. 141 of the turns are pushback. In November I reran the judge on the same turns with the model 0.2 ships, Claude Haiku 5.5. Both judges skip turns that have no agent turn before them.
+The benchmark is 837 turns from 224 of my own Claude Code sessions, collected in August 2026 and labelled by Claude Opus 5. 141 of the turns are pushback. In November I reran the judge on the same turns with the model reflect now ships, Claude Haiku 5.5. Both judges skip turns that have no agent turn before them.
 
 | detector | pushback found (of 141) | false alarms | precision | recall |
 |---|---:|---:|---:|---:|
 | 0.1.4 as shipped (git reverts + English phrases) | 0 | 0 | n/a | 0.0% |
 | judge on Claude Haiku 4.5 (August) | 67 | 10 | 87.0% | 47.5% |
-| **0.2: judge on Claude Haiku 5.5** | **76** | **2** | **97.4%** | **53.9%** |
+| **0.2 and 0.3: judge on Claude Haiku 5.5** | **76** | **2** | **97.4%** | **53.9%** |
 
 On the same turns Haiku 5.5 scores 9.3 F0.5 points above Haiku 4.5 (95% interval 2.5 to 18.5, resampled by session). Turning on adaptive thinking did not help (93.6% precision, 51.8% recall), so it stays off.
 
@@ -68,7 +68,7 @@ What matters in use is whether a session gets a note at all. Replayed over the b
 
 The agent's previous turn is what makes this work. In the August runs, hiding it cost the Haiku 4.5 judge 10.3 F1 points (clustered bootstrap interval 1.2 to 19.8; 6.8 once the turns where the judge declined to answer are left out). Showing it the previous turn of a different pair cost 27.6.
 
-I also ran the plugin end to end in a real `claude -p` session on 2026-11-16. Two corrections in a row fired the trigger, Opus 5.5 wrote the note in 10.3 seconds for $0.020, and the agent's next turn did the check the note asked for.
+I also ran the plugin end to end on 2026-11-16. In a run of the 0.2 plugin, two corrections in a row fired the trigger, Opus 5.5 wrote the note in 10.3 seconds for $0.020, and the agent's next turn did the check the note asked for. The 0.3 mod ran under `claude -p --plugin-dir` with four messages in one process: three Haiku 5.5 judgements took 0.9 to 2.0 seconds each, Opus 5.5 wrote the note in 9.1 seconds for $0.0248, and the note reached the agent with the fourth message and showed up in the transcript.
 
 What these numbers do not tell you:
 
@@ -80,17 +80,17 @@ What these numbers do not tell you:
 
 ## Install
 
-In Claude Code 2.1.275 or later:
+In Claude Code:
 
 ```
 /plugin install chanjoongx-reflect --marketplace chanjoongx/reflect
 ```
 
-On older versions, run `/plugin marketplace add chanjoongx/reflect`, then `/plugin install chanjoongx-reflect@chanjoongx`.
+You can also add the marketplace first: `/plugin marketplace add chanjoongx/reflect`, then `/plugin install chanjoongx-reflect@chanjoongx`. The plugin needs a Claude Code version that runs mods (function hooks). It was tested on 2.1.325.
 
-The automatic path calls the Anthropic API directly, so it needs an API key. Claude Code asks for one when you enable the plugin and keeps it in your system's credential store. The plugin uses that key and no other: it ignores `ANTHROPIC_API_KEY`, `.env` files and `ant auth login` profiles, and it sends the key only to `api.anthropic.com`. A Claude subscription login on its own is not enough for the hooks. `/chanjoongx-reflect:brain-reflect` works without a key, because the agent writes the reflection itself.
+There is no API key to set. The plugin is a mod: Claude Code loads its code itself, and its model calls go through `$.model.complete`, Claude Code's own client for the session. They reach whatever the session uses (the Anthropic API, Amazon Bedrock, Google Vertex AI or a gateway) under the session's sign-in. Claude Code counts them in the session's cost, and `/usage` shows the share from mods. On a subscription they count toward your usage like the session's own requests.
 
-You need `node` 20 or later on your `PATH`. The plugin is the [`plugin/`](plugin/) folder of this repository: the hook bundle, which has nothing to install, the command, and the plugin's own [README](plugin/README.md).
+The plugin needs no `node`, declares no command hooks, runs no program and starts no process. It is the [`plugin/`](plugin/) folder of this repository: one generated code file, `hooks/reflect.ts`, the command, and the plugin's own [README](plugin/README.md).
 
 Without the plugin system:
 
@@ -100,18 +100,18 @@ reflect init     # prints the hook settings to paste into .claude/settings.local
 reflect doctor   # checks node, the key and the wiring
 ```
 
-Outside the plugin, reflect takes the key from `ANTHROPIC_API_KEY`, the project's `.env` or an `ant auth login` profile.
+The npm command runs as command hooks under `node` 20 or later and calls the Anthropic API with your own key, taken from `ANTHROPIC_API_KEY`, the project's `.env` or an `ant auth login` profile.
 
 ## Cost
 
 | call | when | measured |
 |---|---|---|
 | judge, Claude Haiku 5.5 | each message after the agent's first reply | $0.00023 per call on average (4,806 tokens in, 98 out, 1.4 s), over the 837 benchmark turns |
-| reflection, Claude Opus 5.5 | only when two pushbacks land within six messages | $0.020 and $0.029 in two live runs, about 10 s each |
+| reflection, Claude Opus 5.5 | only when two pushbacks land within six messages | $0.020 and $0.029 in two live runs of 0.2, $0.0248 in one of 0.3, about 10 s each |
 
-A 200-message session with three notes would cost about $0.05 for the judge and under $0.10 for the notes. Two reflections are not much of a sample, and a reflection that reads longer turns costs more. [`docs/cost.md`](docs/cost.md) has the details.
+A 200-message session with three notes would cost about $0.05 for the judge and under $0.10 for the notes. Three reflections are not much of a sample, and a reflection that reads longer turns costs more. [`docs/cost.md`](docs/cost.md) has the details.
 
-reflect stops calling the API in a session once it has spent $0.50 there. Change that with the plugin setting or `REFLECT_MAX_USD_PER_SESSION`.
+reflect stops calling models in a session once its calls there have cost $0.50 at API list prices. Change that with the plugin's spend cap setting, or with `REFLECT_MAX_USD_PER_SESSION` for the npm command. When the plugin stops, it says so once in the transcript: "reflect stopped for this session: ...".
 
 ## Commands
 
@@ -121,18 +121,27 @@ reflect stops calling the API in a session once it has spent $0.50 there. Change
 | `reflect status` | What reflect has seen in the latest session: turns judged, pushbacks, notes, spend, errors |
 | `reflect manual [--turns N]` | From a terminal: the reflection model reads your last N judged messages (default 6) and writes a note, whether or not the trigger fired |
 | `reflect doctor` | Checks node, credentials, the hook bundle and `.reflect/` |
-| `reflect off`, `reflect on` | Turns reflect off or on for this project |
+| `reflect off`, `reflect on` | Turns the npm command's hooks off or on for this project |
 | `reflect init` | Prints hook settings for use without the plugin |
 
-The `reflect` commands come with the npm package, not the plugin. Run them as `npx @chanjoongx/reflect <command>`.
+The `reflect` commands come with the npm package, not the plugin, and they work on the npm command's hooks and its `.reflect/` folder. The plugin keeps nothing on disk for them to read. Run them as `npx @chanjoongx/reflect <command>`.
 
 ## Configuration
 
-All optional.
+The plugin has two settings, shown when you enable it and in `/plugin`:
+
+| setting | default | |
+|---|---|---|
+| Reflection model (`reflection_model`) | `claude-opus-5-5` | The model that writes the note. The judge is always Claude Haiku 5.5 |
+| Spend cap per session, USD (`max_usd_per_session`) | `0.5` | Priced at API list prices |
+
+If your organization does not allow a model by its full id, the plugin retries once with the alias (`haiku` or `opus`). If the provider refuses a call with a 401 or 403, the plugin stops for the rest of the session and says so in one transcript line. To turn the plugin off in one project, set `"chanjoongx-reflect@chanjoongx": false` under `enabledPlugins` in that project's `.claude/settings.local.json`.
+
+The npm command reads these environment variables, all optional. The plugin reads none of them.
 
 | variable | default | |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | | Outside the plugin only, or `ant auth login`. The plugin uses its own API key setting |
+| `ANTHROPIC_API_KEY` | | Or `ant auth login`. The plugin needs no key |
 | `REFLECT_POLICY` | `k2w6` | Trigger: `k2w4`, `k2w6`, `k2w8`, `k3w8`, `k2w6-med` (medium confidence or above), `each` |
 | `REFLECT_MODEL` | `claude-opus-5-5` | The reflection model |
 | `REFLECT_EFFORT` | `high` | `low` to `max` |
@@ -140,24 +149,24 @@ All optional.
 | `REFLECT_MAX_USD_PER_SESSION` | `0.5` | Spend cap per session |
 | `REFLECT_DISABLED` | | `1` turns every hook into a no-op |
 
-Outside the plugin, reflect also reads a project's `.env`, but only its `ANTHROPIC_API_KEY` and `REFLECT_*` lines, and never overrides the environment. The plugin does not read `.env`, and its settings take precedence over `REFLECT_MODEL` and `REFLECT_MAX_USD_PER_SESSION`.
+The npm command also reads a project's `.env`, but only its `ANTHROPIC_API_KEY` and `REFLECT_*` lines, and never overrides the environment.
 
 ## What leaves your machine
 
-Each judged message goes to the Anthropic API with your key: the message (up to 2,500 characters) and a summary of the agent's previous turn (its last 14 tool names with their file or command, and the last 1,400 characters of its final reply). A reflection sends the turns that triggered it. Before anything is sent, reflect replaces home directory paths, email addresses, phone numbers and common API key formats with placeholders. Details are in [`plugin/PRIVACY.md`](plugin/PRIVACY.md).
+The plugin sends each request through your Claude Code session's own client, so it goes wherever the session's requests go. The npm command sends it to the Anthropic API with your key. Each judged message sends the message (up to 2,500 characters) and a summary of the agent's previous turn (its last 14 tool names with their file or command, and the last 1,400 characters of its final reply). A reflection sends the turns that triggered it. Before anything is sent, reflect replaces home directory paths, email addresses, phone numbers and common API key formats with placeholders. Details are in [`plugin/PRIVACY.md`](plugin/PRIVACY.md).
 
 ## Development
 
 ```bash
 npm install
 npm test               # typecheck and unit tests; the model calls are faked
-npm run build          # bundles src/ into plugin/hooks/ (the plugin) and dist/ (the npm command)
-npm run smoke          # runs both bundles the way Claude Code and npm do
+npm run build          # writes plugin/hooks/reflect.ts (the plugin) and dist/ (the npm command)
+npm run smoke          # runs the npm bundle the way hand-wired hooks run it
 claude --plugin-dir ./plugin  # try the working copy in a session
 ```
 
-Claude Code installs only `plugin/`, and that folder is also what Anthropic's plugin directory reviews. The source, the benchmark, the viewer and the docs stay out of it. The plugin's bundle is built from `src/plugin-entry.ts` and holds only the hooks; the npm command is built from `src/entry.ts` into `dist/`, which is not committed. The committed plugin bundle must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
+Claude Code installs only `plugin/`, and that folder is also what Anthropic's plugin directory reviews. The source, the benchmark, the viewer and the docs stay out of it. The plugin's module, `plugin/hooks/reflect.ts`, is generated from `src/mod/reflect.ts` and the `src/` modules it imports, without minification. The npm command is built from `src/entry.ts` into `dist/`, which is not committed. The committed module must match `src/`; CI runs `npm run check:bundle`. How the pieces fit is in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the benchmark is in [`bench/`](bench/README.md). The 0.1 documents are kept in [`docs/v0.1/`](docs/v0.1/).
 
 ## License
 
-MIT. The bundled Anthropic SDK and its dependencies are listed with their licenses in [`plugin/hooks/THIRD_PARTY_LICENSES.txt`](plugin/hooks/THIRD_PARTY_LICENSES.txt), and in `dist/THIRD_PARTY_LICENSES.txt` in the npm package.
+MIT. The plugin bundles no third-party code. The npm package bundles the Anthropic SDK and its dependencies, listed with their licenses in `dist/THIRD_PARTY_LICENSES.txt`.

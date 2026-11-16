@@ -6,6 +6,31 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.3.0] 2026-11-16
+
+The plugin directory refused 0.2.3 because its hooks were of type command and its code was `.mjs` files, both of which it now takes only from Verified organizations. 0.3.0 rebuilds the plugin as a mod, which Claude Code loads and runs itself. The npm package works as before.
+
+### Changed
+
+- **The plugin is a mod.** `plugin/hooks/hooks.json` names one module, `hooks/reflect.ts`, and declares no hooks of any type. Nothing runs under `node`, no process is started, and the plugin no longer needs Node.js. The module hooks five events (`session.start`, `session.end`, `prompt.submit`, `tool.call`, `turn.complete`) and calls four things in Claude Code: `$.model.complete`, `$.clock.after`, `$.ui.log` and `$.session.usage`.
+- **No API key.** The judge and the reflection run through Claude Code's own model client for the session, on the session's account and provider. Claude Code counts the calls in the session's cost, and `/usage` shows the share from mods. The `anthropic_api_key` setting is gone; the reflection model and the spend cap remain. If a model's full id is not allowed, reflect retries once with its alias.
+- **Nothing on disk.** The plugin keeps its state in memory for the session and drops it at the end: labels, the last 12 judged messages with their summaries, the agent's current turn and the current note. It writes no `.reflect/` folder. A resumed session starts fresh.
+- **Developer messages only.** Background task notifications, scheduled prompts, messages from other sessions and prompts other plugins queue are passed on unjudged, as are subagents' tool calls and answers.
+- **Compaction without the transcript.** While a note is in force, a drop of the session's context size below half (from at least 20,000 tokens) sends it again. 0.2 learned of a compaction from a `SessionStart` hook.
+- **One generated file.** `npm run build` writes `plugin/hooks/reflect.ts` from `src/mod/reflect.ts` and the 11 `src/` modules it imports, unminified, so the plugin judges and reflects with the same prompts, trigger and redaction as the npm package. `npm run check:bundle` fails if that file is stale, if any plugin file is a type the directory does not take, or if the module reaches for Node, the network, files, processes, the environment, stored data or the transcript.
+- The judge's JSON schema now travels in the prompt, because the engine's completion call has no structured-output option, and the answer is parsed with a code fence or a sentence around it allowed.
+- The plugin folder is 8 files and 109 KB (0.2.3: 23 files, 546 KB).
+
+### Removed
+
+- `plugin/hooks/reflect-hook.mjs`, `plugin/hooks/lib/` and `plugin/hooks/THIRD_PARTY_LICENSES.txt`: the plugin bundles no third-party code. `src/plugin-entry.ts` and `src/api/credentials.plugin.ts` went with them.
+- For the plugin, `.reflect/disabled` and the `REFLECT_*` variables, which a mod cannot read. Disable the plugin in `/plugin`, or for one project under `enabledPlugins` in `.claude/settings.local.json`. The npm command still honors them.
+
+### Verified
+
+- 157 tests, 15 of them the mod against a fake engine. `claude plugin validate --strict` passes for `plugin/` and the marketplace.
+- A live `claude -p --plugin-dir ./plugin` session of four messages: three Claude Haiku 5.5 judgements (0.9 to 2.0 s), one Claude Opus 5.5 reflection (9.1 s, $0.0248), and the note delivered with the fourth message, shown to the developer as a transcript line.
+
 ## [0.2.3] 2026-11-16
 
 Changes from the plugin directory's validation report for 0.2.2.

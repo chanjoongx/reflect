@@ -1,12 +1,11 @@
-// src/hook/main.ts: the hook and worker modes, shared by the plugin's entry
-// (src/plugin-entry.ts, bundled into plugin/hooks/reflect-hook.mjs) and the
-// CLI's (src/entry.ts, bundled into dist/reflect.mjs for the npm package).
+// src/hook/main.ts: the hook and worker modes of the npm package's command
+// (src/entry.ts, bundled into dist/reflect.mjs), for hooks wired into
+// settings.json by hand. The plugin is a mod and does not use them (src/mod/).
 //
 // v0.1.4 shipped one specification in five implementations (two bash hooks, two
 // PowerShell hooks, a TypeScript reference that its own header called
-// divergent). v0.2 has one, and each entry decides only where its settings
-// come from: the plugin from the variables Claude Code passes a plugin, the
-// CLI from its environment and the project .env.
+// divergent). v0.2 has one. Its settings come from the environment and the
+// project .env.
 //
 //   <entry> <session-start|prompt|judge|tool|tool-failed|stop>  (from the hook wiring, JSON on stdin)
 //   <entry> reflect-worker <dir> <session> <id>                 (started by the judge hook)

@@ -1,5 +1,5 @@
 // src/cli/cli.ts: `reflect <command>`, the npm package's command (dist/reflect.mjs).
-// The installed plugin does not include it; see src/plugin-entry.ts.
+// The installed plugin does not include it; it is a mod (src/mod/reflect.ts).
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -33,7 +33,7 @@ USAGE
 
 ENVIRONMENT (all optional)
   ANTHROPIC_API_KEY               Or \`ant auth login\`. The installed plugin does not run this
-                                  command; its hooks use only the key in the plugin's settings
+                                  command; it calls models through the Claude Code session
   REFLECT_JUDGE_MODEL             Default claude-haiku-5-5
   REFLECT_MODEL                   Reflection model. Default claude-opus-5-5
   REFLECT_EFFORT                  low|medium|high|xhigh|max. Default high
@@ -204,7 +204,7 @@ function bundlePath(): string {
   return here.endsWith(".mjs") ? here : resolve(dirname(here), "..", "..", "dist", "reflect.mjs");
 }
 
-/** The same wiring as plugin/hooks/hooks.json, for settings.local.json instead of the plugin. */
+/** The hook wiring for settings.local.json, for a project that runs the npm command instead of the plugin. */
 export function hookSettings(bundle: string): unknown {
   const hook = (mode: string, extra: Record<string, unknown>) => ({ type: "command", command: "node", args: [bundle, mode], ...extra });
   return {

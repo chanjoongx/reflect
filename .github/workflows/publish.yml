@@ -67,10 +67,10 @@ jobs:
       - name: Typecheck and unit tests
         run: npm test
 
-      - name: Committed hook bundle matches src/ (publish exactly what the plugin installs)
+      - name: plugin/hooks/reflect.ts matches src/ and passes the plugin rules
         run: npm run check:bundle
 
-      - name: Bundle smoke test
+      - name: npm command smoke test
         run: npm run smoke
 
       - name: Publish to npm with provenance

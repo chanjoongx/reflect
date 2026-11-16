@@ -1,13 +1,10 @@
-// src/api/credentials.test.ts: as an installed plugin, reflect uses the key from
-// its own setting and nothing else; outside the plugin it also takes the
-// environment's key. The directory review asks for exactly this split.
-// ./credentials.plugin.ts is what the plugin's bundle uses; ./credentials.ts
-// is the CLI's, and follows the same rules when CLAUDE_PLUGIN_ROOT is set.
+// src/api/credentials.test.ts: the npm CLI's key lookup. Under the plugin's
+// rules (CLAUDE_PLUGIN_ROOT or REFLECT_PLUGIN=1) it takes the key from the
+// plugin setting and nothing else; otherwise it also takes the environment's.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hasCredentials, pluginMode, resolveApiKey } from "./credentials.js";
-import * as asPlugin from "./credentials.plugin.js";
 import { ANTHROPIC_API_URL, MissingKeyError, makeClient } from "./client.js";
 
 const SETTING = "CLAUDE_PLUGIN_OPTION_ANTHROPIC_API_KEY";
@@ -65,15 +62,4 @@ test("a plugin client clears ANTHROPIC_* from its process, so no custom header o
     if (saved === undefined) delete process.env["ANTHROPIC_CUSTOM_HEADERS"];
     else process.env["ANTHROPIC_CUSTOM_HEADERS"] = saved;
   }
-});
-
-test("the plugin's bundle takes the key from the plugin setting only and pins the Anthropic API", () => {
-  const env = { ANTHROPIC_API_KEY: "sk-env", ANTHROPIC_AUTH_TOKEN: "tok" };
-  assert.equal(asPlugin.pluginMode(env), true);
-  assert.equal(asPlugin.resolveApiKey(env), undefined);
-  assert.equal(asPlugin.hasCredentials(env), false);
-  assert.throws(() => asPlugin.sdkAuth(undefined, env), MissingKeyError);
-  assert.throws(() => asPlugin.sdkAuth(undefined), MissingKeyError);
-  assert.deepEqual(asPlugin.sdkAuth(undefined, { ...env, [SETTING]: " sk-setting " }), { apiKey: "sk-setting", baseURL: ANTHROPIC_API_URL });
-  assert.deepEqual(asPlugin.sdkAuth("sk-passed"), { apiKey: "sk-passed", baseURL: ANTHROPIC_API_URL });
 });

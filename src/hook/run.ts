@@ -55,7 +55,7 @@ import {
 
 export type HookMode = "session-start" | "prompt" | "judge" | "tool" | "tool-failed" | "stop";
 export const HOOK_MODES: readonly HookMode[] = ["session-start", "prompt", "judge", "tool", "tool-failed", "stop"];
-/** Internal: `node reflect-hook.mjs reflect-worker <projectDir> <sessionId> <firePromptId>`. */
+/** Internal: `node reflect.mjs reflect-worker <projectDir> <sessionId> <firePromptId>`. */
 export const WORKER_MODE = "reflect-worker";
 
 const EVENT_NAME: Record<HookMode, string> = {

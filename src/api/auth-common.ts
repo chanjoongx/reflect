@@ -1,7 +1,5 @@
-// src/api/auth-common.ts: what both credential modules share. ./credentials.ts
-// is the CLI's (environment, project .env, SDK profile); ./credentials.plugin.ts
-// replaces it in the plugin's bundle (the plugin setting only). See
-// scripts/build-hook.mjs.
+// src/api/auth-common.ts: constants and helpers for ./credentials.ts, the npm
+// CLI's key lookup (environment, project .env, SDK profile).
 
 export const ANTHROPIC_API_URL = "https://api.anthropic.com";
 

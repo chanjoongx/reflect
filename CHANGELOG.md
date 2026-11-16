@@ -10,6 +10,7 @@ Semver: MAJOR.MINOR.PATCH.
 
 ### Measured, not shipped
 
+- My own answers on the 78 benchmark turns where the reference labels and a judge disagree (`bench/variants.ts --adjudicated`): with them, 111 of the 837 turns are pushback, not 141. The 0.4 request finds 85 (plugin) and 89 (npm) at 85.0% and 85.6% precision, and the 0.3 request finds 75 at 96.2%. 0.4's "same precision" holds against the model labels only; against these answers its F0.5 is 4 to 6 points lower (intervals include zero), and 21 of the npm command's 30 trigger fires rest on real pushback against 20 of 21 before. FINDINGS §16.
 - `bench/note-effect.mjs --script subtle`: the pushback names only the files to undo and never states a rule, and the project's `CLAUDE.md` invites the agent to stray. With a Haiku 5.5 agent (22 runs per arm, $2.09), the note went out in 21 of 22 sessions with the plugin, and after a compaction the agent changed only the named file in 63 of 66 tasks, against 28 of 63 without the plugin; 10 of 21 sessions without it went back to the CLAUDE.md checklist and none with it did (p = 0.0002). With an Opus 5.5 agent (9 runs per arm, $19.33), 7 of 9 runs without the plugin strayed again after the first correction and none of the 9 with it did (p = 0.0023), so no note was written; a new arm `commands` (the plugin's command list, no hooks; $10.09) strayed in 5 of 9, so the `/brain-reflect` description alone does not explain it. `--max-usd` stops starting runs at a spending cap.
 
 ---

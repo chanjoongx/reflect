@@ -593,3 +593,45 @@ not yet known; with Haiku and corrections that never state the rule, sessions wi
 to the corrections after a compaction and sessions without it often went back to the project's
 checklist. Run `node bench/note-effect.mjs --score <dir>` on a saved run folder to rescore it
 without calls.
+
+## 16. My own answers on the turns the labels dispute (added 2026-11-16)
+
+The reference labels are Claude Opus 5's. Where the reference and at least one judge disagreed
+about whether a turn was pushback, I answered myself, blind to both: 78 turns on
+`bench/data/adjudication.md` (the sheet and the answers hold my prompts and stay out of the
+repository). 77 got a yes or no, one a `?`. The other 759 turns keep the reference label.
+`npx tsx bench/variants.ts --adjudicated --score h55,v0-mod,v0-text,v1-text,v2-text,v3-text`
+repeats this without API calls; add `--split dev` or `--split test` for the halves.
+
+The reference agreed with my answer on 31 of the 77. h55 agreed on 43, the 0.4 requests on 40
+(plugin) and 44 (npm), and the three rubric edits from section 15 on 48, 47 and 50. With my
+answers in place, 111 of the 837 turns are pushback, not 141.
+
+| judge | found (of 111) | false alarms | precision | recall | F0.5 | F0.5 vs h55 (95% CI, by session) | k2w6 fires (both turns pushback) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| h55 (0.2 and 0.3 npm request) | 75 | 3 | 96.2% | 67.6% | 88.7% | | 21 (20) |
+| v0-mod (0.4 plugin request) | 85 | 15 | 85.0% | 76.6% | 83.2% | -5.5 (-12.4 to +0.7) | 26 (18) |
+| v0-text (0.4 npm request) | 89 | 15 | 85.6% | 80.2% | 84.4% | -4.2 (-10.9 to +2.3) | 30 (21) |
+
+On the halves: dev (373 turns, 54 pushback) h55 91.2% precision and 57.4% recall, v0-mod 82.2%
+and 68.5%, v0-text 83.0% and 72.2%, and the rubric edits v1, v2 and v3 82.1% and 85.2%, 81.0% and
+87.0%, 83.9% and 87.0% (v3 F0.5 +3.0 against h55, -8.2 to +13.6). Test (464 turns, 57 pushback)
+h55 100.0% and 77.2%, v0-mod 87.3% and 84.2% (-7.8, -18.3 to +0.8), v0-text 87.7% and 87.7%
+(-6.7, -17.5 to +1.9). The rubric edits were judged on dev only.
+
+What this changes:
+
+- 0.4's "more pushback at the same precision" holds against the model labels only. Against my
+  answers the 0.4 request finds 10 to 14 more pushback turns and raises 12 more false alarms, and
+  its F0.5 is 4 to 6 points lower, with intervals that include zero. At least 12 of the 15 false
+  alarms are turns the reference also read as pushback and I did not, so the 0.4 request and the
+  reference share that reading.
+- The trigger shows it. Of the npm request's 30 fires, 21 rest on two turns I call pushback, and
+  18 of the plugin's 26; h55 has 20 of 21.
+- h55's recall was understated: 67.6% against my answers, not 53.9%.
+- The rubric edits section 15 set aside for losing precision against the reference lose no more
+  than the 0.4 request does against my answers, and recall 85 to 87% on dev. Whether to ship one
+  is a judgement between more notes and more wrong notes, and dev is too small to settle it.
+
+Limits: one person answering in November about messages written in or before August, and only on
+the disputed turns. Nothing shipped changes with this section.

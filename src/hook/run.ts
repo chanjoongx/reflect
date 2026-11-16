@@ -439,7 +439,11 @@ export async function judgeTurn(
       model: cfg.judgeModel,
       thinking: cfg.judgeThinking,
       effort: "low",
-      format: "prompt",
+      // Structured output, as up to 0.3. 0.4 put the schema in the message,
+      // which found more pushback by the model labels but, on the turns where
+      // the labels and the judges disagree, lost precision by the developer's
+      // own answers (96.2% to 85.6%; bench/FINDINGS.md section 16).
+      format: "schema",
       maxRetries: 2,
       timeoutMs: 30_000,
     });

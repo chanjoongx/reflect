@@ -8,10 +8,22 @@ Semver: MAJOR.MINOR.PATCH.
 
 ## [Unreleased]
 
-### Measured, not shipped
+---
+
+## [0.4.1] 2026-11-16
+
+The npm command's judge goes back to structured output. By my own answers on the benchmark turns where the labels and the judges disagree, it is the more precise request, and the 0.4.0 request fired more notes without cause.
+
+### Changed
+
+- **The npm command asks the judge for structured output again**, as up to 0.3 (`format: "schema"` in `src/hook/run.ts`). 0.4.0 put the schema at the end of the message: by the model labels that found more pushback at the same precision, but by my answers it finds 89 of 111 at 85.6% precision and fires 30 notes, 21 of them on real pushback, where structured output finds 75 at 96.2% and fires 21, 20 of them on real pushback. The F0.5 lead is 4.2 points (95% interval -2.3 to 10.9).
+- The plugin's judge is unchanged. A mod's model call takes no output schema, and the two other requests tried for it did no better (below).
+
+### Measured
 
 - My own answers on the 78 benchmark turns where the reference labels and a judge disagree (`bench/variants.ts --adjudicated`): with them, 111 of the 837 turns are pushback, not 141. The 0.4 request finds 85 (plugin) and 89 (npm) at 85.0% and 85.6% precision, and the 0.3 request finds 75 at 96.2%. 0.4's "same precision" holds against the model labels only; against these answers its F0.5 is 4 to 6 points lower (intervals include zero), and 21 of the npm command's 30 trigger fires rest on real pushback against 20 of 21 before. FINDINGS §16.
 - `bench/note-effect.mjs --script subtle`: the pushback names only the files to undo and never states a rule, and the project's `CLAUDE.md` invites the agent to stray. With a Haiku 5.5 agent (22 runs per arm, $2.09), the note went out in 21 of 22 sessions with the plugin, and after a compaction the agent changed only the named file in 63 of 66 tasks, against 28 of 63 without the plugin; 10 of 21 sessions without it went back to the CLAUDE.md checklist and none with it did (p = 0.0002). With an Opus 5.5 agent (9 runs per arm, $19.33), 7 of 9 runs without the plugin strayed again after the first correction and none of the 9 with it did (p = 0.0023), so no note was written; a new arm `commands` (the plugin's command list, no hooks; $10.09) strayed in 5 of 9, so the `/brain-reflect` description alone does not explain it. `--max-usd` stops starting runs at a spending cap.
+- Requests tried for the plugin's judge, scored by my answers: the schema at the end of the system text instead of the message (all 837 turns: 85.5% precision, 64.0% recall, against 85.0% and 76.6% for the shipped request), and a rubric edit saying that settling a choice the agent asked for is not a correction (dev half only: 81.1% and 79.6%). The judge writes the label first with or without structured output, so the gap comes from the API's structured-output mode. About $0.42 on the Claude API. `bench/FINDINGS.md` section 17.
 
 ---
 

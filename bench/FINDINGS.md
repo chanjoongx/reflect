@@ -635,3 +635,52 @@ What this changes:
 
 Limits: one person answering in November about messages written in or before August, and only on
 the disputed turns. Nothing shipped changes with this section.
+
+## 17. 0.4.1: the npm command goes back to structured output (added 2026-11-16)
+
+Section 16 left two questions: whether a rubric edit could bring the 0.4 request's precision back,
+and whether the plugin, which cannot ask for structured output, has a better request. Every score
+below uses my answers where I gave one and the reference elsewhere.
+
+**A rubric edit, chosen on dev.** Most of the 0.4 request's false alarms on the dev half fell into
+two kinds. In one, the agent had asked me to choose or had recommended a next step, and I settled
+it, declined it, or floated an alternative as a question; the 0.4 request and the reference called
+that a correction. The other kind is a message that sets a quality bar for the work ahead ("do it
+properly, at the highest quality"), which the section 15 rubric edits also call a correction and
+I did not. `v4` adds a boundary case for the first kind to `v3` (`bench/judge-variants.ts`, with
+examples written fresh). On dev it did not help: 78.9% precision and 83.3% recall in the npm
+command's request, 81.1% and 79.6% in the plugin's, against 83.9% and 87.0% for `v3`. It cleared one
+targeted false alarm that `v3` still made and added new false alarms elsewhere, one of them a
+logic puzzle. Single samples of the same request also disagree with each other from run to run,
+and on 54 pushback turns that noise is as large as the effects being chased, so no rubric edit
+was taken further.
+
+**Two samples instead of one.** Requiring two independent verdicts to agree, simulated with the
+plugin's and the npm command's 0.4 requests as the two samples, left precision where it was (85.4%
+on all turns): the two requests make the same false alarms, so they are systematic, not noise.
+
+**The schema in the system text.** The plugin's model call (`$.model.complete`) takes a prompt
+and a system text but no output schema. `v0-modsys` keeps the plugin's request and moves the
+schema from the end of the message to the end of the system text, so the message is the one the
+structured-output request sends. The rule, set before the run, was to adopt it only at 90% or more
+precision on all turns and a higher F0.5 than the shipped plugin request on all turns and on test.
+On all 837 turns it scored 85.5% precision and 64.0% recall (F0.5 80.1, against 83.2 for the
+shipped request and 88.7 for structured output), so it was not adopted.
+
+**Key order.** Six raw answers to the plugin's request, three of them false alarms, all began
+`{"label":` with nothing before it, in the schema's order. The judge does not reason its way to a
+label in the text before writing it. Whatever makes the structured-output request more precise
+sits in the API's structured-output mode, which a mod cannot reach.
+
+| request, all 837 turns | found (of 111) | false alarms | precision | recall | F0.5 | k2w6 fires (both turns pushback) |
+|---|---:|---:|---:|---:|---:|---:|
+| structured output (h55; the npm command up to 0.3 and from 0.4.1) | 75 | 3 | 96.2% | 67.6% | 88.7% | 21 (20) |
+| the plugin's request (v0-mod) | 85 | 15 | 85.0% | 76.6% | 83.2% | 26 (18) |
+| the 0.4.0 npm request (v0-text) | 89 | 15 | 85.6% | 80.2% | 84.4% | 30 (21) |
+| schema in the system text (v0-modsys) | 71 | 12 | 85.5% | 64.0% | 80.1% | 26 (20) |
+
+What shipped in 0.4.1: the npm command's judge asks for structured output again. That is the
+request the 2026-08 labels were made with and the one `h55` measures, so its numbers carry over
+without a new run. The plugin keeps its request and is the less precise of the two forms; a
+structured-output option on `$.model.complete` is what would close the gap. These runs cost about
+$0.42 on the Claude API.

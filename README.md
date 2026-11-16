@@ -60,17 +60,25 @@ The benchmark is 837 turns from 224 of my own Claude Code sessions, collected in
 |---|---:|---:|---:|---:|
 | 0.1.4 as shipped (git reverts + English phrases) | 0 | 0 | n/a | 0.0% |
 | judge on Claude Haiku 4.5 (August) | 67 | 10 | 87.0% | 47.5% |
-| 0.2 and 0.3 npm command: Claude Haiku 5.5, structured output | 76 | 2 | 97.4% | 53.9% |
-| **0.4 plugin: Claude Haiku 5.5, schema in the message** | **98** | **2** | **98.0%** | **69.5%** |
-| **0.4 npm command: Claude Haiku 5.5, schema in the message** | **101** | **3** | **97.1%** | **71.6%** |
+| **npm command 0.2, 0.3 and 0.4.1: Claude Haiku 5.5, structured output** | **76** | **2** | **97.4%** | **53.9%** |
+| **plugin 0.4: Claude Haiku 5.5, schema in the message** | **98** | **2** | **98.0%** | **69.5%** |
+| npm command 0.4.0 only: Claude Haiku 5.5, schema in the message | 101 | 3 | 97.1% | 71.6% |
 
-The three Haiku 5.5 rows use the same rubric, with thinking off and effort low. They differ in how the request asks for the answer. Up to 0.3 the npm command asked for structured output. In 0.4 both forms put the verdict's JSON Schema at the end of the message and accept a sentence or a code fence around the answer, and the plugin's request also starts with the identity line Claude Code puts before a plugin's system text. F0.5 went from 83.9% to 90.6% with the plugin's request and to 90.7% with the npm command's: 6.7 points (95% interval 3.5 to 10.4, resampled by session) and 6.8 points (3.2 to 10.8). The judge in the 0.3.0 plugin left effort at the model's default and was never measured.
+The three Haiku 5.5 rows use the same rubric, with thinking off and effort low. They differ in how the request asks for the answer. Up to 0.3 the npm command asked for structured output. In 0.4 both forms put the verdict's JSON Schema at the end of the message and accept a sentence or a code fence around the answer, and the plugin's request also starts with the identity line Claude Code puts before a plugin's system text. F0.5 went from 83.9% to 90.6% with the plugin's request and to 90.7% with the npm command's: 6.7 points (95% interval 3.5 to 10.4, resampled by session) and 6.8 points (3.2 to 10.8). The judge in the 0.3.0 plugin left effort at the model's default and was never measured. 0.4.1 puts the npm command back on structured output, for the reason in the next paragraph.
 
-These labels are a model's. I answered the 78 turns where the reference and a judge disagree myself, without seeing either label. With my answers in place, 111 of the 837 turns are pushback, not 141, and the picture changes: the 0.2 and 0.3 request finds 75 with 3 false alarms (96.2% precision, 67.6% recall), the 0.4 plugin 85 with 15 (85.0%, 76.6%), and the 0.4 npm command 89 with 15 (85.6%, 80.2%). So 0.4 finds more pushback at lower precision, and its F0.5 is 4 to 6 points lower, with intervals that include zero. [`bench/FINDINGS.md`](bench/FINDINGS.md) §16 has the details.
+These labels are a model's. I answered the 78 turns where the reference and a judge disagree myself, without seeing either label. With my answers in place, 111 of the 837 turns are pushback, not 141, and the rows change places:
+
+| request, scored by my answers | pushback found (of 111) | false alarms | precision | recall | trigger fires on real pushback |
+|---|---:|---:|---:|---:|---:|
+| **structured output: the npm command up to 0.3 and from 0.4.1** | **75** | **3** | **96.2%** | **67.6%** | **20 of 21** |
+| **schema in the message: the plugin** | **85** | **15** | **85.0%** | **76.6%** | **18 of 26** |
+| schema in the message: the npm command in 0.4.0 | 89 | 15 | 85.6% | 80.2% | 21 of 30 |
+
+The schema in the message finds more pushback, but by my answers it also flags many turns that were not pushback, and the trigger fires more notes without cause. A wrong note is the error reflect counts as worse, so 0.4.1 puts the npm command back on structured output. Its F0.5 lead is 4.2 points with a 95% interval of -2.3 to 10.9, so the case rests on the false alarms and the trigger more than on F0.5. The plugin cannot do the same: a mod's model call (`$.model.complete`) takes a prompt and a system text but no output schema. Moving the schema from the message to the system text gave 85.5% precision and 64.0% recall, and the answer comes back with the label first either way, so the difference lies in the API's structured-output mode itself. The plugin's judge stays as it is and is the less precise of the two. [`bench/FINDINGS.md`](bench/FINDINGS.md) §16 and §17 have the details.
 
 With the 0.2 request, Haiku 5.5 scores 9.3 F0.5 points above Haiku 4.5 on the same turns (95% interval 2.5 to 18.5). Turning on adaptive thinking did not help (93.6% precision, 51.8% recall), so it stays off.
 
-What matters in use is whether a session gets a note at all. Replayed over the benchmark with the 0.4 npm command's labels, the default trigger (two pushbacks within six turns) fired 30 times, and 29 of those fires landed on turns the reference labels call pushback. Of the 26 sessions where the reference labels trip the same trigger, it reached 20. With the plugin's labels it fired 26 times, 25 of them on pushback, and reached 18 sessions. The 0.2 and 0.3 judge made 21 good fires of 21 and reached 17 sessions. The Haiku 4.5 judge made 17 good fires of 20 and reached 15. By my own answers on the disputed turns, 21 of the npm command's 30 fires rest on two real pushback turns, 18 of the plugin's 26, and 20 of the 0.2 judge's 21. `npx tsx bench/variants.ts --score h55,v0-mod,v0-text` repeats the replay without API calls, and `npm run bench:sim -- --run h55` repeats it for the 0.2 and 0.3 labels.
+What matters in use is whether a session gets a note at all. Replayed over the benchmark with the 0.4.0 npm command's labels, the default trigger (two pushbacks within six turns) fired 30 times, and 29 of those fires landed on turns the reference labels call pushback. Of the 26 sessions where the reference labels trip the same trigger, it reached 20. With the plugin's labels it fired 26 times, 25 of them on pushback, and reached 18 sessions. The structured-output judge, which the npm command uses again from 0.4.1, made 21 good fires of 21 and reached 17 sessions. The Haiku 4.5 judge made 17 good fires of 20 and reached 15. By my own answers on the disputed turns, 20 of the structured-output judge's 21 fires rest on two real pushback turns, 18 of the plugin's 26, and 21 of the 0.4.0 npm command's 30. `npx tsx bench/variants.ts --score h55,v0-mod,v0-text` repeats the replay without API calls, and `npm run bench:sim -- --run h55` repeats it for the 0.2 and 0.3 labels.
 
 The agent's previous turn is what makes this work. In the August runs, hiding it cost the Haiku 4.5 judge 10.3 F1 points (clustered bootstrap interval 1.2 to 19.8; 6.8 once the turns where the judge declined to answer are left out). Showing it the previous turn of a different pair cost 27.6.
 
@@ -114,7 +122,7 @@ The npm command runs as command hooks under `node` 20 or later and calls the Ant
 
 | call | when | measured |
 |---|---|---|
-| judge, Claude Haiku 5.5 | each message after the agent's first reply | $0.00026 per call on average (about 4,600 tokens in, 105 out, 1.3 s), over the 837 benchmark turns with the 0.4 requests |
+| judge, Claude Haiku 5.5 | each message after the agent's first reply | $0.00023 per call with the npm command's structured output and $0.00026 with the plugin's request, on average over the 837 benchmark turns (about 4,600 tokens in, 1.3 to 1.4 s) |
 | reflection, Claude Opus 5.5 | only when two pushbacks land within six messages | $0.020 and $0.029 in two live runs of 0.2, $0.0248 in one of 0.3, about 10 s each |
 
 A 200-message session with three notes would cost about $0.05 for the judge and under $0.10 for the notes. Three reflections are not much of a sample, and a reflection that reads longer turns costs more. [`docs/cost.md`](docs/cost.md) has the details.

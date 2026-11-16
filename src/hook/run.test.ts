@@ -466,6 +466,23 @@ test("the key from the project .env or the plugin setting is the one the model c
   }
 });
 
+test("the npm command's judge asks for its verdict through structured output", async () => {
+  const w = world();
+  const formats: Array<string | undefined> = [];
+  const judge = w.deps.judge;
+  w.deps.judge = async (pair, o) => {
+    formats.push(o.format);
+    return judge(pair, o);
+  };
+  try {
+    await turn(w, "p1", "Fix the parser", "instruction", "Fixed.", ["src/p.ts"]);
+    await turn(w, "p2", "no, only p.ts", "correction", "Reverted q.", ["src/q.ts"]);
+    assert.deepEqual(formats, ["schema"]);
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
 test("IDE context blocks are not read as the developer's words", async () => {
   const w = world();
   try {

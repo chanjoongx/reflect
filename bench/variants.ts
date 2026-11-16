@@ -110,7 +110,7 @@ function fnv(s: string): number {
 
 /** Everything that shapes a variant's request, hashed: a changed rubric or shape is a cache miss. */
 function variantFp(v: Variant): string {
-  const material = [v.system, v.shape, v.model, "effort=low", "thinking=off", JSON.stringify(VERDICT_SCHEMA), "render=v2-tail", v.shape === "mod" ? CLI_IDENTITY : ""].join("\u0000");
+  const material = [v.system, v.shape, v.model, "effort=low", "thinking=off", JSON.stringify(VERDICT_SCHEMA), "render=v2-tail", v.shape === "mod" || v.shape === "mod-system" ? CLI_IDENTITY : ""].join("\u0000");
   return fnv(material).toString(16).padStart(8, "0");
 }
 
@@ -230,8 +230,14 @@ async function judge(client: MessagesClient, v: Variant, pair: Pair): Promise<Om
                   { type: "text", text: CLI_IDENTITY },
                   { type: "text", text: v.system, cache_control: { type: "ephemeral" } },
                 ]
-              : [{ type: "text", text: v.system, cache_control: { type: "ephemeral", ttl: "1h" } }],
-          messages: [{ role: "user", content: `${user}\n\n${answerAsJson(VERDICT_SCHEMA)}` }],
+              : v.shape === "mod-system"
+                ? [
+                    { type: "text", text: CLI_IDENTITY },
+                    { type: "text", text: `${v.system}\n\n${answerAsJson(VERDICT_SCHEMA)}`, cache_control: { type: "ephemeral" } },
+                  ]
+                : [{ type: "text", text: v.system, cache_control: { type: "ephemeral", ttl: "1h" } }],
+          // `mod-system` sends the message alone, as `api` does.
+          messages: [{ role: "user", content: v.shape === "mod-system" ? user : `${user}\n\n${answerAsJson(VERDICT_SCHEMA)}` }],
           thinking: { type: "disabled" },
           output_config: { effort: "low" },
         });
@@ -258,7 +264,7 @@ function costOf(r: { model: string; inputTokens: number; outputTokens: number; c
     inputTokens: r.inputTokens,
     outputTokens: r.outputTokens,
     cacheReadTokens: r.cacheReadTokens,
-    ...(shape === "mod" ? { cacheCreation5mTokens: r.cacheCreationTokens } : { cacheCreation1hTokens: r.cacheCreationTokens }),
+    ...(shape === "mod" || shape === "mod-system" ? { cacheCreation5mTokens: r.cacheCreationTokens } : { cacheCreation1hTokens: r.cacheCreationTokens }),
   });
 }
 

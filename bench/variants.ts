@@ -35,6 +35,7 @@ import { costUSD, formatUSD } from "../src/pricing.js";
 import { Accumulator, defaultPolicy } from "../src/trigger/accumulator.js";
 import { confusion, fbeta, pairedDeltaCI, precision, recall, type Confusion } from "./metrics.js";
 import { VARIANTS, type Shape, type Variant } from "./judge-variants.js";
+import { adjudicationHtml, mergeMarks, parseAnswersJson, parseSheetMarks, type Mark, type MergedMarks, type SheetItem } from "./adjudication.js";
 
 /** The fingerprint the 2026-08 reference labels and the 2026-11 `h55` run were stamped with. */
 const REF_FP = "c74d7145eb";
@@ -139,33 +140,54 @@ const evalRows = rows
 //
 // `--sheet` writes bench/data/adjudication.md: every judged pair where the
 // reference and the listed runs do not all agree on pushback or not, with no
-// labels shown. A person writes y, n or ? after each "Pushback?". With
-// `--adjudicated`, those answers replace the reference on the pairs answered
-// and every score below is computed against the result.
+// labels shown. A person writes y, n or ? after each "Pushback?". The same
+// items go into bench/data/adjudication.html, answered with the keyboard in a
+// browser; its "Save answers" downloads adjudication-answers.json. With
+// `--adjudicated`, the y and n answers from both (the file wins where they
+// differ) replace the reference on the pairs answered, and every score below
+// is computed against the result.
 
 const SHEET = join(DATA, "adjudication.md");
+const PAGE = join(DATA, "adjudication.html");
+const ANSWERS_ARG = arg("--answers", "");
+const ANSWERS = ANSWERS_ARG || join(DATA, "adjudication-answers.json");
+/** The default answers path as the sheet and page show it. */
+const ANSWERS_SHOWN = `${DATA.replace(/\\/g, "/")}/adjudication-answers.json`;
 const ADJUDICATED = argv.includes("--adjudicated");
 
-/** The answers on the sheet: pair id to pushback or not. Blank and "?" are left out. */
-function sheetAnswers(): Map<string, boolean> {
-  const out = new Map<string, boolean>();
-  if (!existsSync(SHEET)) throw new Error(`${SHEET} is missing; write it with --sheet first`);
-  let id: string | null = null;
-  for (const line of readFileSync(SHEET, "utf8").split(/\r?\n/)) {
-    const head = /^### \d+\. `([^`]+)`/.exec(line);
-    if (head) id = head[1] as string;
-    const ans = /^\*\*Pushback\?\*\*\s*(.*)$/.exec(line);
-    if (ans && id) {
-      const a = (ans[1] ?? "").trim().toLowerCase().replace(/[_`*]/g, "");
-      if (/^(y|yes|예|네|o)$/.test(a)) out.set(id, true);
-      else if (/^(n|no|아니오|아니요|x)$/.test(a)) out.set(id, false);
-      id = null;
-    }
+/** Every answer from the markdown sheet and the saved answers file, "?" included. */
+function readAnswers(): MergedMarks & { fileFound: boolean } {
+  if (ANSWERS_ARG && !existsSync(ANSWERS_ARG)) throw new Error(`${ANSWERS_ARG} (given with --answers) is missing`);
+  const sheetMarks = existsSync(SHEET) ? parseSheetMarks(readFileSync(SHEET, "utf8")) : new Map<string, Mark>();
+  const fileFound = existsSync(ANSWERS);
+  let fileMarks = new Map<string, Mark>();
+  if (fileFound) {
+    const r = parseAnswersJson(readFileSync(ANSWERS, "utf8"), ANSWERS);
+    fileMarks = r.marks;
+    if (r.skipped.length) process.stderr.write(`[variants] ${ANSWERS}: ${r.skipped.length} answers are not y, n or ? and were skipped: ${r.skipped.join(", ")}\n`);
   }
+  return { ...mergeMarks(sheetMarks, fileMarks), fileFound };
+}
+
+/** The person's answers for scoring: pair id to pushback or not. Blank and "?" are left out. */
+function humanAnswers(): Map<string, boolean> {
+  if (!existsSync(SHEET) && !existsSync(ANSWERS)) throw new Error(`${SHEET} is missing; write it with --sheet first`);
+  const a = readAnswers();
+  const out = new Map<string, boolean>();
+  let fromSheet = 0;
+  let fromFile = 0;
+  for (const [id, m] of a.marks) {
+    if (m === "?") continue;
+    out.set(id, m === "y");
+    if (a.origin.get(id) === "file") fromFile++;
+    else fromSheet++;
+  }
+  process.stdout.write(`Answers counted (y or n): ${fromSheet} from ${SHEET}, ${fromFile} from ${ANSWERS}${a.fileFound ? "" : " (no such file)"}.\n`);
+  if (a.disagree.length) process.stdout.write(`The sheet and ${ANSWERS} answer ${a.disagree.length} ${a.disagree.length === 1 ? "pair" : "pairs"} differently; using ${ANSWERS}: ${a.disagree.join(", ")}\n`);
   return out;
 }
 
-const human = ADJUDICATED ? sheetAnswers() : new Map<string, boolean>();
+const human = ADJUDICATED ? humanAnswers() : new Map<string, boolean>();
 /** Pushback by the reference, or by the person where they answered. */
 const refPush = (pairId: string): boolean => human.get(pairId) ?? isPushback(ref.get(pairId)!.verdict.label);
 
@@ -429,11 +451,12 @@ function misses(id: string): void {
 /**
  * The adjudication sheet: judged pairs where the reference and the listed runs
  * split on pushback or not. No label is shown, so the answers are the person's
- * own. Answers already written on an earlier sheet are carried over.
+ * own. Answers already written on an earlier sheet or in the saved answers
+ * file are carried over into both the sheet and the page.
  */
 function sheet(ids: string[]): void {
   const sources = ids.map(sourceOf);
-  const kept = existsSync(SHEET) ? sheetAnswers() : new Map<string, boolean>();
+  const kept = readAnswers();
   const disputed = evalRows
     .filter((r) => r.gate.pass)
     .filter((r) => {
@@ -445,6 +468,7 @@ function sheet(ids: string[]): void {
       return votes.some(Boolean) && votes.some((v) => !v);
     })
     .sort((a, b) => (a.sessionId === b.sessionId ? a.promptIndex - b.promptIndex : a.sessionId.localeCompare(b.sessionId)));
+  const scoreCommand = `npx tsx bench/variants.ts --adjudicated --score ${["h55", ...ids.filter((x) => x !== "h55")].join(",")}`;
   const out = [
     "# Adjudication: was this message pushback?",
     "",
@@ -456,20 +480,31 @@ function sheet(ids: string[]): void {
     "- `n` if you were giving new work, asking something, or approving",
     "- `?` if you cannot tell",
     "",
-    `Then run \`npx tsx bench/variants.ts --adjudicated --score ${["h55", ...ids.filter((x) => x !== "h55")].join(",")}\`. It makes no API calls. Messages are in session order. Running \`--sheet\` again keeps the answers already written.`,
+    `The same messages are in \`adjudication.html\` next to this file. Open it in a browser from disk and answer with the keys \`y\`, \`n\` and \`?\`; it makes no requests. Its **Save answers** button downloads \`adjudication-answers.json\`: move that to \`${ANSWERS_SHOWN}\`, or pass its path with \`--answers <path>\`. Where this sheet and that file answer a message differently, the file wins.`,
+    "",
+    `Then run \`${scoreCommand}\`. It makes no API calls. Messages are in session order. Running \`--sheet\` again keeps the answers already written here and in the answers file.`,
     "",
     "---",
     "",
   ];
+  const items: SheetItem[] = [];
   disputed.forEach((r, i) => {
-    const prev = kept.get(r.pairId);
+    const prev = kept.marks.get(r.pairId);
+    const prior = renderPriorTurn(r);
+    const message = r.prompt.slice(0, 2500);
+    items.push({ id: r.pairId, prior, message, mark: prev });
     out.push(`### ${i + 1}. \`${r.pairId}\``, "");
-    out.push("**What the agent did and said just before**", "", "```text", renderPriorTurn(r), "```", "");
-    out.push("**Your message**", "", "```text", r.prompt.slice(0, 2500), "```", "");
-    out.push(`**Pushback?** ${prev === undefined ? "" : prev ? "y" : "n"}`, "", "---", "");
+    out.push("**What the agent did and said just before**", "", "```text", prior, "```", "");
+    out.push("**Your message**", "", "```text", message, "```", "");
+    out.push(`**Pushback?** ${prev ?? ""}`, "", "---", "");
   });
   writeFileSync(SHEET, out.join("\n"), "utf8");
-  process.stdout.write(`${SHEET}: ${disputed.length} messages, ${[...kept.keys()].filter((k) => disputed.some((r) => r.pairId === k)).length} already answered\n`);
+  writeFileSync(PAGE, adjudicationHtml(items, { judges: ids, scoreCommand, answersPath: ANSWERS_SHOWN }), "utf8");
+  const onSheet = items.filter((it) => it.mark !== undefined);
+  const fromFile = onSheet.filter((it) => kept.origin.get(it.id) === "file").length;
+  process.stdout.write(`${SHEET} and ${PAGE}: ${disputed.length} messages, ${onSheet.length} already answered (${onSheet.length - fromFile} from the sheet, ${fromFile} from ${ANSWERS})\n`);
+  const differ = kept.disagree.filter((id) => disputed.some((r) => r.pairId === id));
+  if (differ.length) process.stdout.write(`The sheet and ${ANSWERS} answered ${differ.length} of these ${differ.length === 1 ? "message" : "messages"} differently; kept the file's: ${differ.join(", ")}\n`);
 }
 
 async function main() {

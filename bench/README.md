@@ -136,6 +136,7 @@ bench/
   check-findings.ts  asserts FINDINGS.md still matches results.json
   variants.ts        judge variants on a dev and a test half of the sessions → results/variants-<split>.md
   judge-variants.ts  the variants: the shipped rubric in three request shapes, and rubric edits v1 to v3
+  adjudication.ts    reads the person's answers (sheet and saved file) and writes the answering page
   note-effect.mjs    scripted live sessions with and without the plugin
   data/         corpus + labels + review sheets   (gitignored — real prompts)
   results/      report + workbench                 (gitignored — quotes prompts)
@@ -152,9 +153,15 @@ id, writes `results/variants-<split>.md` and can write a sheet of misses.
 The reference is a model, and on the messages where it and the judges disagree it is sometimes
 inconsistent with itself. `--sheet` writes `data/adjudication.md`: every judged pair where the
 reference and the listed runs split on pushback or not, in session order, with no label shown. A
-person writes `y`, `n` or `?` after each. `--adjudicated` then puts those answers in place of the
-reference on the pairs answered and scores every run against the result, with how often the
-reference and each run agreed with the person. On the August corpus the sheet holds 78 messages.
+person writes `y`, `n` or `?` after each. The same messages go into `data/adjudication.html`, a page
+that is opened from disk and answered with the keyboard (`y`, `n`, `?`, arrows or `k`/`j` to move,
+`u` to clear). It makes no requests, keeps answers in the browser as you go, and its **Save answers**
+button downloads `adjudication-answers.json`. `--adjudicated` reads the sheet and that file
+(`data/adjudication-answers.json`, or the path given with `--answers`), prints how many answers came
+from each, and where both answer a message differently it uses the file and prints the pair ids. It
+then puts the `y` and `n` answers in place of the reference on the pairs answered and scores every
+run against the result, with how often the reference and each run agreed with the person. Running
+`--sheet` again keeps the answers from both. On the August corpus the sheet holds 78 messages.
 
 `note-effect.mjs` runs scripted `claude -p` sessions in a small scratch project, with the plugin
 loaded (`reflect`) and without it (`none`), to see whether a note changes what the agent does next.
@@ -163,8 +170,9 @@ loaded (`reflect`) and without it (`none`), to see whether a note changes what t
 npx tsx bench/variants.ts --run <id> --score h55,<id> --split dev|test|all   # judges what is missing (costs money)
 npx tsx bench/variants.ts --score h55,<id> --split test                       # no API calls
 npx tsx bench/variants.ts --misses <id> --split dev                           # misses sheet in results/, no API calls
-npx tsx bench/variants.ts --sheet h55,v0-mod,v0-text,v1-text,v2-text,v3-text  # blind yes/no sheet in data/, no API calls
-npx tsx bench/variants.ts --adjudicated --score h55,v0-mod,v0-text           # scores against the answered sheet, no API calls
+npx tsx bench/variants.ts --sheet h55,v0-mod,v0-text,v1-text,v2-text,v3-text  # blind yes/no sheet and page in data/, no API calls
+npx tsx bench/variants.ts --adjudicated --score h55,v0-mod,v0-text           # scores against the answers, no API calls
+npx tsx bench/variants.ts --adjudicated --answers <file> --score h55,v0-text  # the same, with answers saved from the page elsewhere
 node bench/note-effect.mjs --script style|scope|subtle --arms reflect,none --n 5 --out <dir> [--max-usd 17]   # costs money through the Claude Code login
 node bench/note-effect.mjs --score <dir>                                      # rescores saved runs, no calls
 ```

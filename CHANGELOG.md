@@ -10,7 +10,7 @@ Semver: MAJOR.MINOR.PATCH.
 
 ### Measured, not shipped
 
-- `bench/note-effect.mjs --script subtle`: the pushback names only the files to undo and never states a rule, and the project's `CLAUDE.md` invites the agent to stray. With an Opus 5.5 agent (9 runs per arm, $19.33), 7 of 9 runs without the plugin strayed again after the first correction and none of the 9 with it did (p = 0.0023), so no note was written. The likeliest cause is the plugin's `/brain-reflect` description in the agent's command list; untested. After the compaction the arms behaved nearly the same. `--max-usd` stops starting runs at a spending cap.
+- `bench/note-effect.mjs --script subtle`: the pushback names only the files to undo and never states a rule, and the project's `CLAUDE.md` invites the agent to stray. With a Haiku 5.5 agent (22 runs per arm, $2.09), the note went out in 21 of 22 sessions with the plugin, and after a compaction the agent changed only the named file in 63 of 66 tasks, against 28 of 63 without the plugin; 10 of 21 sessions without it went back to the CLAUDE.md checklist and none with it did (p = 0.0002). With an Opus 5.5 agent (9 runs per arm, $19.33), 7 of 9 runs without the plugin strayed again after the first correction and none of the 9 with it did (p = 0.0023), so no note was written; a new arm `commands` (the plugin's command list, no hooks; $10.09) strayed in 5 of 9, so the `/brain-reflect` description alone does not explain it. `--max-usd` stops starting runs at a spending cap.
 
 ---
 

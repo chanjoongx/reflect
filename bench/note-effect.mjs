@@ -4,7 +4,9 @@
 // holding a small JS project. The developer pushes back twice, each time only
 // if the agent actually did the thing pushed back on. Then the conversation is
 // compacted and the agent gets three more tasks. Arm `reflect` loads ./plugin;
-// arm `none` runs the same script without it.
+// arm `none` runs the same script without it; arm `commands` loads a copy of
+// ./plugin with no hooks, so the agent sees the plugin's command list and
+// nothing else (no judge, no note, no /reflect-status).
 //
 // Two scripts:
 //   style  The files use function declarations with JSDoc. The developer says
@@ -32,9 +34,9 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -235,6 +237,21 @@ async function pushbacks(send, work, log) {
 
 // ─── One run ──────────────────────────────────────────────────────────
 
+/** A copy of ./plugin without its hooks folder: the manifest and commands only. */
+function commandsOnlyPlugin() {
+  const dir = join(OUT, "_plugin-commands-only");
+  if (!existsSync(dir)) {
+    cpSync(join(ROOT, "plugin"), dir, {
+      recursive: true,
+      filter: (src) => {
+        const rel = relative(join(ROOT, "plugin"), src).split(sep).join("/");
+        return rel !== "hooks" && !rel.startsWith("hooks/") && !rel.startsWith(".claude-plugin/types");
+      },
+    });
+  }
+  return dir;
+}
+
 async function runOne(arm, i) {
   const dir = join(OUT, `${arm}-${i}`);
   const work = join(dir, "work");
@@ -242,6 +259,7 @@ async function runOne(arm, i) {
   const out = createWriteStream(join(dir, "out.jsonl"));
   const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", MODEL, "--dangerously-skip-permissions"];
   if (arm === "reflect") args.push("--plugin-dir", join(ROOT, "plugin"));
+  if (arm === "commands") args.push("--plugin-dir", commandsOnlyPlugin());
   const child = spawn("claude", args, { cwd: work, shell: process.platform === "win32", stdio: ["pipe", "pipe", "pipe"] });
 
   const log = { script: SCRIPT, arm, i, sent: [], uiLogs: [], results: [], compacted: false, cost: 0, status: null, tasks: [] };

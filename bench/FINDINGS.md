@@ -547,12 +547,49 @@ Claude Code login of the machine that ran them.
   runs, and `chunk` also added the new module to `src/index.js` in all 9 runs without the plugin
   and 8 of 9 with it, a file no pushback named and the CLAUDE.md asks for.
 
-  Before a note, the plugin adds nothing to the conversation. It does add two entries to the
+  Before a note, the hooks pass every message and tool result through unchanged, and none of the
+  judge's traffic appears in the agent's conversation. The plugin does add two entries to the
   command list the agent sees: `/chanjoongx-reflect:brain-reflect`, described as "Step back and
-  look at why the developer keeps pushing back in this session", and `/reflect-status`. That
-  description is the likeliest cause of the difference on the second function. It is untested:
-  separating it needs a third arm that loads the command list without the hooks. If it holds,
-  the plugin's command text changed what the agent did and its note did not get the chance.
+  look at why the developer keeps pushing back in this session", and `/reflect-status`, which the
+  mod registers at session start. The description was the first suspect.
 
-Across the three scripts the note has not been shown to change anything. Run
-`node bench/note-effect.mjs --score <dir>` on a saved run folder to rescore it without calls.
+- **commands (Opus 5.5, 9 runs).** Arm `commands` loads a copy of the plugin with no hooks, so
+  the agent sees `/brain-reflect` in its command list and nothing else runs. 5 of 9 runs strayed
+  again on the second function: between no plugin (7 of 9, p = 0.62) and the full plugin (0 of 9,
+  p = 0.029). The description alone does not explain the Opus result. What is left is
+  `/reflect-status` in the command list, the change to the list when the mod registers it, and
+  whatever loading a mod changes in Claude Code itself; these have not been separated. $10.09,
+  plus a $0.03 Haiku pilot that confirmed the copy loads with the command and no hooks.
+
+- **subtle (Haiku 5.5, 22 runs per arm in two batches).** The Haiku agent strayed on both
+  functions with or without the plugin, so both pushbacks went out in 21 of 22 runs without it and
+  22 of 22 with it, and 21 of the 22 runs with it showed the note. After the compaction, in the
+  runs with both pushbacks, the agent changed only the named file in 63 of 66 tasks with the
+  plugin and in 28 of 63 without it. 10 of 21 runs without the plugin went back to the CLAUDE.md
+  checklist (README, CHANGELOG, a test) after the compaction; none of the 22 with it did (Fisher's
+  exact test, two-sided, p = 0.0002; a permutation test on tasks followed per run, shuffling arms
+  within each batch, p < 0.001). The batches differ: without the plugin, 2 of 9 runs went back to
+  the checklist in the first batch and 8 of 12 in the second, on the same Claude Code version
+  (2.1.325) about twenty minutes apart; with the plugin, none in either. $0.75 without the
+  plugin, $1.34 with it.
+
+  The compaction summaries show the difference. In a run that went back to the checklist, the
+  summary kept the CLAUDE.md checklist as a project rule and the reverts as finished steps
+  ("Done (reverted by hand)"). With the note, the summaries named the conflict and settled it:
+  "the user's latest instruction governs", and "ask the user whether to restore the README,
+  CHANGELOG, and test entries ... do not do this without a decision".
+
+This is the first scripted session in which the plugin changed what the agent did after a
+compaction, and the note is the likeliest reason: it is the one thing the plugin adds to the
+conversation in these runs. Three limits. It is one script with a Haiku agent. The runs use one
+machine's Claude Code setup (its global CLAUDE.md, and a PreCompact hook that asks the summary to
+keep changed files and checks), the same for every arm. And a run with the plugin's hooks but no
+note has not been done, which matters because the Opus runs show the plugin changing behavior
+before any note.
+
+Across the scripts so far: where the developer states the rule, nothing is left for the note to
+do; with Opus, loading the plugin stopped repeat straying before a note was needed, for reasons
+not yet known; with Haiku and corrections that never state the rule, sessions with the note held
+to the corrections after a compaction and sessions without it often went back to the project's
+checklist. Run `node bench/note-effect.mjs --score <dir>` on a saved run folder to rescore it
+without calls.

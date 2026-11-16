@@ -6,6 +6,35 @@ Semver: MAJOR.MINOR.PATCH.
 
 ---
 
+## [0.4.0] 2026-11-16
+
+The judge finds more of the pushback: 98 to 101 of the benchmark's 141 turns, up from 76, at the same precision. The plugin gains `/reflect-status`, and the npm command can wire its own hooks.
+
+### Changed
+
+- **The judge's schema travels in the message for both forms.** The npm command used to ask for the verdict through structured output (`output_config.format`). On the 837-turn benchmark that found 76 of 141 pushback turns with 2 false alarms (97.4% precision, 53.9% recall). The same rubric with the schema at the end of the message, read tolerantly, found 101 with 3 false alarms (97.1%, 71.6%), F0.5 +6.8 points (95% interval +3.2 to +10.8, resampled by session). The plugin's request, which also carries Claude Code's identity line, found 98 with 2 (98.0%, 69.5%), +6.7 (+3.5 to +10.4). The rubric itself is unchanged. `judgePair` takes `format: "schema" | "prompt"`; the hooks send `prompt`, and `bench/label.ts` keeps `schema` so its cached labels stay comparable.
+- **The plugin's judge runs at effort low**, as the benchmark measured it. 0.3.0 left the effort to the model's default.
+- With the 0.4 requests the default trigger fires 26 times (plugin, 25 on real pushback) or 30 times (npm, 29) over the benchmark and reaches 18 or 20 of the 26 sessions that should get a note, against 21 fires and 17 sessions before.
+
+### Added
+
+- **`/reflect-status`** in the plugin: messages counted and judged, pushback by kind, notes written, spend against the cap, the note in force and how many more messages it lasts, and why reflect stopped if it did. It reads memory only and calls no model. The plugin now calls five engine functions; the fifth is `$.command.register`.
+- **`reflect init --write`** merges the npm command's hooks into the project's `.claude/settings.local.json`, keeping other settings and hooks, replacing reflect entries from an earlier install and leaving a `.bak` copy. `--remove` takes them out. It warns when the bundle path points into npm's temporary cache and when git does not ignore the file.
+- `bench/variants.ts` and `bench/judge-variants.ts`: judge the benchmark with a named rubric and request shape, split the sessions into a dev half and a held-out half by a hash of the session id, and write the misses of a run as a sheet to read.
+- `bench/note-effect.mjs`: scripted live sessions with and without the plugin, to see whether a note changes what the agent does after a compaction.
+
+### Fixed
+
+- A judge answer the plugin could not read stopped reflect for the rest of the session. It now skips that one message and says so in the debug log.
+- The plugin judged a bare slash command such as `/review` as if it were the developer answering the agent. A slash command with nothing typed after it is now passed on unjudged.
+
+### Measured, not shipped
+
+- Three rubric edits aimed at the misses that remain, mostly messages that call the delivered work not good enough and ask for more, were tried on the dev half only. They raised recall there from 71.9% to between 76.6% and 81.3%, but precision fell from 97.9% to between 87.5% and 91.1% and F0.5 dropped. The reference labels themselves split on such messages. The rubric stays as it was, and the held-out half was not used to choose anything.
+- Scripted live sessions with and without the plugin (`bench/note-effect.mjs`) showed no difference. With a Haiku 5.5 agent corrected twice on code style and then compacted, all 15 new functions followed the developer's rules in each arm (5 runs each), because Claude Code's compaction summary kept the rules. One Opus 5.5 run without the plugin, corrected twice on which files to touch, kept to the named files after compaction on its own. Whether notes help in long sessions with implicit pushback is still unmeasured. Details in `bench/FINDINGS.md` §15.
+
+---
+
 ## [0.3.0] 2026-11-16
 
 The plugin directory refused 0.2.3 because its hooks were of type command and its code was `.mjs` files, both of which it now takes only from Verified organizations. 0.3.0 rebuilds the plugin as a mod, which Claude Code loads and runs itself. The npm package works as before.

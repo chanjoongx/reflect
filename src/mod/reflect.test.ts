@@ -66,9 +66,16 @@ function harness(options: Record<string, unknown> = {}) {
     },
     ui: { log: (text: string, o?: { to?: string }) => (o?.to === "debug" ? debug : logs).push(text) },
     session: { usage: async () => ({ context: { tokens: state.tokens, window: 1_000_000 } }) },
+    command: {
+      register: async (spec: { name: string; description: string; immediate?: true }) => {
+        commands.push(spec);
+      },
+    },
   };
-  const on = (event: string, hook: AnyFn) => {
-    hooks.set(event, hook);
+  const commands: { name: string; description: string; immediate?: true }[] = [];
+  // `on(event, hook)` or `on(event, matcher, hook)`.
+  const on = (event: string, a: AnyFn | object, b?: AnyFn) => {
+    hooks.set(event, (typeof a === "function" ? a : b) as AnyFn);
     return { catch: () => undefined };
   };
   register(on as never, options as never);
@@ -80,6 +87,10 @@ function harness(options: Record<string, unknown> = {}) {
     debug,
     state,
     sent,
+    commands,
+    /** The developer runs /reflect-status. */
+    status: async () =>
+      ((await hooks.get("command.run")!($, { command: "reflect-status", args: "" }, async () => ({}))) as { text: string }).text,
     start: () => hooks.get("session.start")!($, { cwd: "/w", surface: null, isInteractive: false }, async (e: unknown) => e),
     end: () => hooks.get("session.end")!($, {}, async (e: unknown) => e),
     /** The developer sends a message; resolves to what the engine passed on. */
@@ -127,7 +138,7 @@ test("the session's first message is not judged; the next one is, with the agent
   assert.ok(j);
   assert.equal(j.model, "claude-haiku-5-5");
   assert.equal(j.system[0]?.cache, true);
-  assert.equal(j.effort, undefined);
+  assert.equal(j.effort, "low");
   assert.match(j.prompt, /now add tests for it/);
   assert.match(j.prompt, /src\/config\.ts/);
   assert.match(j.prompt, /JSON Schema/);
@@ -297,6 +308,23 @@ test("an unanswered call goes to the debug log and the session goes on", async (
   assert.match(h.debug[0] ?? "", /judge call returned no answer \(aborted\)/);
 });
 
+test("a judge answer that cannot be read skips that message and the session goes on", async () => {
+  const h = harness();
+  let n = 0;
+  const scripted = h.state.reply;
+  h.state.reply = (req) => (n++ === 0 ? { isAnswered: true, text: "I think this is a correction.", usage } : scripted(req));
+  await h.start();
+  await h.say("start");
+  await h.turn();
+  await h.say("next");
+  await h.turn();
+  await h.say("and next");
+  await idle();
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.logs.length, 0);
+  assert.match(h.debug[0] ?? "", /judge's answer could not be read/);
+});
+
 test("a model id the engine refuses is tried once more under its alias", async () => {
   const h = harness();
   const scripted = h.state.reply;
@@ -368,4 +396,46 @@ test("a reflection model set in the plugin's options is used", async () => {
   await h.say(`${PUSH} wrong again`);
   await idle();
   assert.equal(reflectionCalls(h)[0]?.model, "claude-sonnet-5-5");
+});
+
+test("/reflect-status is registered at session start and reports the session from memory", async () => {
+  const h = harness({ max_usd_per_session: 0.25 });
+  await h.start();
+  assert.deepEqual(
+    h.commands.map((c) => [c.name, c.immediate]),
+    [["reflect-status", true]],
+  );
+  assert.match(await h.status(), /messages: 0, judged 0\n- pushback: 0\n- notes written: 0\n- spent: \$0\.0000 of the \$0\.25 cap\n- no note in force$/);
+
+  await h.say("refactor the parser");
+  await h.turn();
+  await h.say(`${PUSH} no, only touch the parser file`);
+  await h.turn("src/b.ts");
+  await h.say(`${PUSH} you edited another file again`);
+  await idle();
+  const ready = await h.status();
+  assert.match(ready, /messages: 3, judged 2/);
+  assert.match(ready, /pushback: 2 \(correction 2\)/);
+  assert.match(ready, /notes written: 1/);
+  assert.match(ready, /a note is ready/);
+  assert.doesNotMatch(ready, /\$0\.0000 of/, "the calls are counted");
+
+  await h.tool("Read", { file_path: "src/a.ts" });
+  assert.match(await h.status(), /note in force for 4 more messages: Edit only the file the developer names/);
+  assert.equal(judgeCalls(h).length, 2, "the status command calls no model");
+});
+
+test("slash commands with nothing after them, and /reflect-status itself, are not judged", async () => {
+  const h = harness();
+  await h.start();
+  await h.say("refactor the parser");
+  await h.turn();
+  await h.say("/reflect-status", { command: { command: "reflect-status", args: "" } });
+  await h.say("/review", { command: { command: "review", args: "" } });
+  await idle();
+  assert.equal(judgeCalls(h).length, 0);
+  await h.say("/review only the parser, not the tests", { command: { command: "review", args: "only the parser, not the tests" } });
+  await idle();
+  assert.equal(judgeCalls(h).length, 1, "a command with words after it carries the developer's intent");
+  assert.match(await h.status(), /messages: 2, judged 1/);
 });

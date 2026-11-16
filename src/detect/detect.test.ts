@@ -16,7 +16,8 @@ import {
   detectScript,
 } from "./lexical.js";
 import { extractFeatures, scoreFeatures, structuralGate } from "./structural.js";
-import { parseVerdict } from "./judge.js";
+import { judgePair, parseVerdict } from "./judge.js";
+import type { MessagesClient } from "../api/client.js";
 import { stripWrappers, isBookkeeping, targetTokens } from "../transcript/parse.js";
 import type { Pair, ToolCall } from "./types.js";
 import { isPushback } from "./types.js";
@@ -320,4 +321,47 @@ test("safeTruncate never orphans a surrogate at the cut", () => {
 
 test("safeTruncate is a no-op below the limit", () => {
   assert.equal(safeTruncate("되돌려줘", 100), "되돌려줘");
+});
+
+// ─── judgePair request formats ────────────────────────────────────────
+
+function fakeClient(answer: string): { client: MessagesClient; sent: any[] } {
+  const sent: any[] = [];
+  const create = async (params: any) => {
+    sent.push(params);
+    return {
+      model: params.model,
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: answer }],
+      usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    };
+  };
+  return { client: { messages: { create }, beta: { messages: { create } } } as unknown as MessagesClient, sent };
+}
+
+const VERDICT_JSON = JSON.stringify({ label: "correction", confidence: "high", evidence: "not that", rationale: "steers away" });
+
+test("judgePair sends structured output by default", async () => {
+  const { client, sent } = fakeClient(VERDICT_JSON);
+  const r = await judgePair(pair(), { client, thinking: "off", effort: "low" });
+  assert.equal(r.verdict.label, "correction");
+  assert.equal(sent[0].output_config.format.type, "json_schema");
+  assert.equal(sent[0].output_config.effort, "low");
+  assert.doesNotMatch(sent[0].messages[0].content, /JSON Schema/);
+});
+
+test("judgePair with format prompt puts the schema in the message and reads a wrapped answer", async () => {
+  const { client, sent } = fakeClient(`Here is my answer:\n${VERDICT_JSON}\nDone.`);
+  const r = await judgePair(pair(), { client, thinking: "off", effort: "low", format: "prompt" });
+  assert.equal(r.verdict.label, "correction");
+  assert.equal(sent[0].output_config.format, undefined);
+  assert.equal(sent[0].output_config.effort, "low");
+  assert.deepEqual(sent[0].thinking, { type: "disabled" });
+  assert.match(sent[0].messages[0].content, /Answer with one JSON object and nothing else/);
+  assert.equal(sent[0].system[0].cache_control.ttl, "1h");
+});
+
+test("judgePair with format prompt rejects an answer outside the label set", async () => {
+  const { client } = fakeClient(JSON.stringify({ label: "undo_request", confidence: "high", evidence: "", rationale: "" }));
+  await assert.rejects(judgePair(pair(), { client, thinking: "off", format: "prompt" }), /unknown label/);
 });

@@ -40,7 +40,7 @@ const MOD_OUT = join(PLUGIN, "hooks", "reflect.ts");
 const HOOKS_JSON = { modules: ["./reflect.ts"] };
 
 /** The engine methods the module may call, as `$.<noun>.<method>`. */
-const ENGINE_CALLS = new Set(["model.complete", "clock.after", "ui.log", "session.usage"]);
+const ENGINE_CALLS = new Set(["model.complete", "clock.after", "ui.log", "session.usage", "command.register"]);
 
 /** File types the plugin directory takes from any organization, by extension. */
 const ALLOWED_EXT = /\.(md|txt|json|ya?ml|png|jpe?g|gif|webp|ico)$/i;

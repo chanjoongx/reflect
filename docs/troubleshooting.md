@@ -4,17 +4,17 @@ reflect comes in two forms, and you look in different places for each. The plugi
 
 ## The plugin
 
-**No notes ever arrive.** Run Claude Code with `--debug` and look for lines from `chanjoongx-reflect`: each model call is logged with its result. If the provider refuses a call (401 or 403), reflect says so in the transcript and stops for that session. If calls are made but no note follows, see [A pushback but no note](#a-pushback-but-no-note).
+**No notes ever arrive.** Run `/reflect-status` first. It shows how many of your messages reflect has counted and judged, how many were pushback, whether a note was written or is waiting, the spend against the cap, and why reflect stopped if it did. It reads only what reflect holds in memory and calls no model. For more, run Claude Code with `--debug` and look for lines from `chanjoongx-reflect`: each model call is logged with its result. If the provider refuses a call (401 or 403), reflect says so in the transcript and stops for that session. If calls are made but no note follows, see [A pushback but no note](#a-pushback-but-no-note).
 
 **The plugin does not load.** reflect needs a Claude Code version that runs mods (function hooks). It was tested on 2.1.325. Check in `/plugin` that it is installed and enabled, and that the project's `.claude/settings.local.json` does not set `"chanjoongx-reflect@chanjoongx": false` under `enabledPlugins`.
 
 **`reflect stopped for this session: ...`** The line says why. Either the session's calls reached the spend cap (see [Spend](#spend)), the provider refused a call with a 401 or 403, or the judge model could not be called even under its alias. reflect makes no more model calls in that session, and a new session starts over.
 
-**`reflect doctor` or `reflect status` shows nothing.** Those commands come with the npm package and read the npm command's `.reflect/` folder. The plugin never writes there.
+**`reflect doctor` or `reflect status` shows nothing.** Those commands come with the npm package and read the npm command's `.reflect/` folder. The plugin never writes there; use `/reflect-status` in the session instead.
 
 ## A pushback but no note
 
-The default policy `k2w6` needs 2 pushback verdicts within 6 of your messages, and after a fire it waits 3 messages before it can fire again. The first message of a session is never judged, because there is no agent turn yet to push back on, and neither is a message sent before the agent replied to the previous one. The judge also misses about half of real pushback in the benchmark, mostly by reading a correction as a new instruction ([`bench/FINDINGS.md`](../bench/FINDINGS.md) §9).
+The default policy `k2w6` needs 2 pushback verdicts within 6 of your messages, and after a fire it waits 3 messages before it can fire again. The first message of a session is never judged, because there is no agent turn yet to push back on, and neither is a message sent before the agent replied to the previous one. The judge also misses about 30% of real pushback in the benchmark, mostly by reading a correction as a new instruction ([`bench/FINDINGS.md`](../bench/FINDINGS.md) §9). Most of those misses call the delivered work not good enough and ask for more. A slash command with nothing typed after it is not judged.
 
 To get a note now, run `/chanjoongx-reflect:brain-reflect` and the agent reflects on its own, or, with the npm command's hooks, run `reflect manual` from a terminal. The plugin always uses `k2w6`. With the npm command, `REFLECT_POLICY=each` makes the trigger fire on every pushback.
 

@@ -1,6 +1,6 @@
 {
   "name": "@chanjoongx/reflect",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publishConfig": {
     "access": "public"
   },
@@ -37,6 +37,7 @@
   "keywords": [
     "claude-code",
     "claude-code-plugin",
+    "claude-code-mod",
     "claude-code-hooks",
     "claude",
     "anthropic",

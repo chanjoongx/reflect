@@ -1,7 +1,8 @@
 // src/cli/cli.ts: `reflect <command>`, the npm package's command (dist/reflect.mjs).
 // The installed plugin does not include it; it is a mod (src/mod/reflect.ts).
 
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasCredentials, pluginMode, resolveApiKey } from "../api/credentials.js";
@@ -29,6 +30,8 @@ USAGE
                   [--agent]       Output meant for an agent's context: always exits 0
   reflect doctor                  Check node, credentials and the hook bundle
   reflect init                    Print the hook settings for a project that does not use the plugin
+               [--write]          Merge them into .claude/settings.local.json (old file kept as .bak)
+               [--remove]         Take reflect's hooks out of that file, leaving the rest
   reflect off | on                Disable or re-enable reflect for this project
 
 ENVIRONMENT (all optional)
@@ -218,8 +221,176 @@ export function hookSettings(bundle: string): unknown {
   };
 }
 
-function cmdInit(): number {
+type Json = Record<string, unknown>;
+const isObject = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** A settings file reflect will not change, with the reason. */
+export class SettingsError extends Error {}
+
+/**
+ * True for a hook entry that runs a reflect bundle: a command hook whose args[0]
+ * or command string is a path to reflect.mjs, from this install or an older one.
+ */
+export function isReflectHook(h: unknown): boolean {
+  if (!isObject(h) || h["type"] !== "command") return false;
+  const isBundle = (s: unknown) => typeof s === "string" && /(?:^|[\\/])reflect\.mjs$/.test(s.trim().replace(/^["']|["']$/g, ""));
+  const args = h["args"];
+  return isBundle(Array.isArray(args) ? args[0] : undefined) || isBundle(h["command"]);
+}
+
+/** A copy of the settings without reflect's hook entries; the `hooks` key stays even when empty. */
+function stripReflect(settings: unknown): { settings: Json; removed: number } {
+  if (!isObject(settings)) throw new SettingsError("is not a JSON object");
+  const hooks = settings["hooks"];
+  if (hooks !== undefined && !isObject(hooks)) throw new SettingsError('has a "hooks" value that is not an object');
+  const out = JSON.parse(JSON.stringify(settings)) as Json;
+  if (!isObject(out["hooks"])) return { settings: out, removed: 0 };
+  let removed = 0;
+  const next: Json = {};
+  for (const [event, groups] of Object.entries(out["hooks"])) {
+    if (!Array.isArray(groups)) {
+      next[event] = groups;
+      continue;
+    }
+    const kept: unknown[] = [];
+    let lost = false;
+    for (const g of groups) {
+      const entries = isObject(g) ? g["hooks"] : undefined;
+      if (!isObject(g) || !Array.isArray(entries)) {
+        kept.push(g);
+        continue;
+      }
+      const left = entries.filter((h) => !isReflectHook(h));
+      const n = entries.length - left.length;
+      if (n === 0) {
+        kept.push(g);
+        continue;
+      }
+      removed += n;
+      lost = true;
+      if (left.length > 0) kept.push({ ...g, hooks: left });
+    }
+    if (lost && kept.length === 0) continue;
+    next[event] = kept;
+  }
+  out["hooks"] = next;
+  return { settings: out, removed };
+}
+
+/** The settings with reflect's entries taken out, and the `hooks` key deleted if that leaves it empty. */
+export function removeReflectHooks(settings: unknown): { settings: Json; removed: number } {
+  const r = stripReflect(settings);
+  const hooks = r.settings["hooks"];
+  if (r.removed > 0 && isObject(hooks) && Object.keys(hooks).length === 0) delete r.settings["hooks"];
+  return r;
+}
+
+/** The settings with any old reflect entries replaced by the groups from hookSettings(bundle), appended per event. */
+export function mergeReflectHooks(settings: unknown, bundle: string): { settings: Json; added: number; removed: number } {
+  const { settings: out, removed } = stripReflect(settings);
+  const hooks: Json = isObject(out["hooks"]) ? out["hooks"] : (out["hooks"] = {});
+  let added = 0;
+  const wanted = (hookSettings(bundle) as { hooks: Record<string, Array<{ hooks: unknown[] }>> }).hooks;
+  for (const [event, groups] of Object.entries(wanted)) {
+    const cur = hooks[event];
+    if (cur !== undefined && !Array.isArray(cur)) throw new SettingsError(`has a "hooks.${event}" value that is not a list`);
+    hooks[event] = [...(cur ?? []), ...groups];
+    added += groups.reduce((n, g) => n + g.hooks.length, 0);
+  }
+  return { settings: out, added, removed };
+}
+
+/** True when git ignores the file; undefined when git cannot tell (no git, not a repository). */
+function gitIgnores(dir: string, rel: string): boolean | undefined {
+  try {
+    execFileSync("git", ["check-ignore", "-q", rel], { cwd: dir, stdio: "ignore", timeout: 5000 });
+    return true;
+  } catch (e) {
+    return (e as { status?: unknown }).status === 1 ? false : undefined;
+  }
+}
+
+export interface InitResult {
+  code: number;
+  out: string[];
+  err: string[];
+}
+
+/** `reflect init --write` or `--remove` on <dir>/.claude/settings.local.json. Writes only when the content changes. */
+export function applyInit(dir: string, bundle: string, mode: "write" | "remove"): InitResult {
+  const rel = ".claude/settings.local.json";
+  const file = join(dir, ".claude", "settings.local.json");
+  const out: string[] = [];
+  const fail = (why: string): InitResult => ({ code: 1, out, err: [`reflect: ${file} ${why}. Nothing was written.`] });
+  const exists = existsSync(file);
+  let before: unknown = {};
+  if (exists) {
+    const text = readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+    if (text.trim() !== "") {
+      try {
+        before = JSON.parse(text);
+      } catch (e) {
+        return fail(`is not valid JSON (${(e as Error).message})`);
+      }
+    }
+  }
+  let after: Json;
+  let summary: string;
+  try {
+    if (mode === "write") {
+      const r = mergeReflectHooks(before, bundle);
+      after = r.settings;
+      summary = `Added ${r.added} reflect hook entries to ${file}${r.removed > 0 ? `, replacing ${r.removed} it had before` : ""}.`;
+    } else {
+      const r = removeReflectHooks(before);
+      if (r.removed === 0) {
+        out.push(exists ? `${file} has no reflect hook entries. Nothing to remove.` : `${file} does not exist. Nothing to remove.`);
+        return { code: 0, out, err: [] };
+      }
+      after = r.settings;
+      summary = `Removed ${r.removed} reflect hook entries from ${file}. Other settings and hooks are unchanged.`;
+    }
+  } catch (e) {
+    if (e instanceof SettingsError) return fail(e.message);
+    throw e;
+  }
+  const text = `${JSON.stringify(after, null, 2)}\n`;
+  if (exists && JSON.stringify(before, null, 2) === JSON.stringify(after, null, 2)) {
+    out.push(`${file} already has these hooks. Nothing to change.`);
+  } else {
+    mkdirSync(dirname(file), { recursive: true });
+    if (exists) copyFileSync(file, `${file}.bak`);
+    writeFileSync(file, text);
+    out.push(summary);
+    if (exists) out.push(`The previous file is in ${file}.bak.`);
+    out.push(mode === "write" ? "Restart Claude Code so it loads the hooks." : "Restart Claude Code so it stops running them.");
+  }
+  if (mode === "write" && bundle.split("\\").join("/").includes("/_npx/")) {
+    out.push(
+      `Warning: the hooks point into npx's temporary cache (${bundle}), which npm may clean up.`,
+      "Install the package with `npm i -g @chanjoongx/reflect`, then run `reflect init --write` again.",
+    );
+  }
+  if (mode === "write" && gitIgnores(dir, rel) === false) {
+    out.push(`Note: git does not ignore ${rel}. It holds an absolute local path; keep it out of git.`);
+  }
+  return { code: 0, out, err: [] };
+}
+
+function cmdInit(argv: string[]): number {
   const bundle = bundlePath().split("\\").join("/");
+  const write = argv.includes("--write");
+  const remove = argv.includes("--remove");
+  if (argv.some((a) => a !== "--write" && a !== "--remove") || (write && remove)) {
+    console.error(`reflect: init takes --write or --remove, not '${argv.join(" ")}'. Try \`reflect help\`.`);
+    return 2;
+  }
+  if (write || remove) {
+    const r = applyInit(projectDir(), bundle, write ? "write" : "remove");
+    for (const l of r.out) console.log(l);
+    for (const l of r.err) console.error(l);
+    return r.code;
+  }
   console.log("As a plugin, reflect needs no setup. In Claude Code:");
   console.log("  /plugin install chanjoongx-reflect --marketplace chanjoongx/reflect");
   console.log("");
@@ -228,6 +399,7 @@ function cmdInit(): number {
   console.log("");
   console.log(JSON.stringify(hookSettings(bundle), null, 2));
   console.log("");
+  console.log("Or run `reflect init --write` to merge it for you (`reflect init --remove` takes it out again).");
   console.log("Then run `reflect doctor` in the project and restart Claude Code so it loads the hooks.");
   return 0;
 }
@@ -255,7 +427,7 @@ export async function runCli(argv: string[]): Promise<number> {
     case "doctor":
       return cmdDoctor();
     case "init":
-      return cmdInit();
+      return cmdInit(argv.slice(1));
     case "off":
       setDisabled(projectDir(), true);
       console.log("reflect is off for this project. `reflect on` turns it back on.");

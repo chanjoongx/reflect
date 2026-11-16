@@ -454,3 +454,81 @@ No run produces those numbers; the generated `bench/results/report.md` has alway
 **Still open from §11.** The reference is still a model. The human review sheets are still empty.
 The corpus is still one developer's, two thirds of it not coding.
 
+
+## 15. 0.4: the request shape mattered more than the rubric (added 2026-11-16)
+
+**How the judge is asked changed what it finds.** The 0.3 plugin could not send structured
+output (`$.model.complete` has no such option), so it put the verdict schema at the end of the
+message and parsed the answer tolerantly. `bench/variants.ts` judged all 837 pairs three ways with
+the same rubric (`c74d7145eb`), Claude Haiku 5.5, thinking off, effort low:
+
+| request | found | false alarms | precision | recall | F0.5 | Δ F0.5 vs structured (95% CI, by session) | k2w6 fires (supported) | sessions reached of 26 |
+|---|---:|---:|---:|---:|---:|---|---|---|
+| structured output (`h55`, the 0.2 and 0.3 npm command) | 76 | 2 | 97.4% | 53.9% | 83.9% | | 21 (21) | 17 |
+| CLI identity line, schema in the message (`v0-mod`, the plugin) | 98 | 2 | 98.0% | 69.5% | 90.6% | +6.7 (+3.5 to +10.4) | 26 (25) | 18 |
+| schema in the message (`v0-text`) | 101 | 3 | 97.1% | 71.6% | 90.7% | +6.8 (+3.2 to +10.8) | 30 (29) | 20 |
+
+The identity line made no difference; the schema's place did. With structured output the judge
+labelled more pushback turns `instruction`. I did not find out why. 0.4 sends the schema in the
+message from both forms (`judgePair(..., { format: "prompt" })` in the npm hook); `bench/label.ts`
+keeps structured output so the cached `h55` labels stay what they were. Per call: $0.00026, about
+4,600 input tokens of which 2,840 come from cache, 105 output tokens, 1.3 s.
+
+**A held-out half, late.** The rubric and trigger were chosen on all 837 pairs, so from 0.4 on
+the sessions are split by `fnv("split:" + sessionId) % 2`: a dev half (106 sessions, 373 pairs,
+64 pushback) for trying changes and a test half (118 sessions, 464 pairs, 77 pushback) left alone.
+The request comparison above was run before the split existed, so it is in-sample. On the test
+half alone the plugin's request gains +4.0 F0.5 (+0.8 to +7.7) and the npm request +3.2 (-1.4 to
++7.6).
+
+**Rubric edits for the remaining misses did not pay.** On the dev half, v0-text missed 18 of 64
+pushback turns. Read one by one, most were messages that call the round the agent just delivered
+not good enough and then ask for more (in substance: still not enough, take it to production
+quality, do it properly), and a few supplied a fact that overturned the agent's last answer. Three edits of the
+rubric (`bench/judge-variants.ts`) were tried on the dev half only:
+
+| rubric (dev half) | found | false alarms | precision | recall | F0.5 |
+|---|---:|---:|---:|---:|---:|
+| v0, shipped | 46 | 1 | 97.9% | 71.9% | 91.3% |
+| v1: dissatisfaction with the delivered round is correction | 51 | 5 | 91.1% | 79.7% | 88.5% |
+| v2: v1 plus new facts that overturn the last answer | 52 | 6 | 89.7% | 81.3% | 87.8% |
+| v3: v2 without "a missed correction is cheap" | 49 | 7 | 87.5% | 76.6% | 85.1% |
+
+The new false alarms were mostly the same kind of message, which the Opus 5 reference labels both
+ways: a short "still not enough, make it more refined" is `instruction` in one place, and a
+near-identical message two turns later in the same session is `correction`. A rubric cannot agree with a
+reference that disagrees with itself, so the shipped rubric stays, and the test half was not
+used to choose anything. Settling this class needs the human review sheets.
+
+**Does the note change what the agent does?** `bench/note-effect.mjs` runs scripted `claude -p`
+sessions over stream-json in a fresh folder, with the plugin (`reflect`) and without it (`none`).
+The developer pushes back twice, each time only if the agent did the thing objected to, then the
+conversation is compacted with `/compact`, then the agent gets three more tasks.
+
+Haiku 5.5 is the agent unless stated.
+
+- **style.** The project's files use function declarations with JSDoc. The pushbacks are "no
+  comments" and then "const arrow functions". All 10 runs (5 per arm) sent both, and all 5
+  `reflect` runs delivered a note. After the compaction every one of the 30 new functions followed
+  both rules: 15 of 15 in each arm. Claude Code's compaction summary kept the rules nearly word for
+  word ("Style constraints from the user, which override my earlier choices: no comments ...,
+  arrow functions assigned to `const`"). The note added about $0.028 per session and changed
+  nothing that this script measures.
+- **scope.** The project has a README list of functions, tests, a CHANGELOG and a `src/index.js`
+  that re-exports each module. The pushbacks are "don't touch README.md" and then "don't write
+  tests unless I ask"; neither names CHANGELOG.md or `src/index.js`. The Haiku agent edited only
+  the file it was given from the start (one run per arm), so no pushback was ever sent, and one
+  Sonnet 5.5 run did the same. Opus 5.5 was the only agent that strayed. In one run without the
+  plugin it edited README, CHANGELOG and a test with the first function and a test with the
+  second, drew both pushbacks, and after the compaction changed only the named file in all three
+  tasks, CHANGELOG and `src/index.js` included. It generalized from two specific corrections on
+  its own. In one run with the plugin it stayed in scope before the compaction, so no note was
+  written, and afterwards it added the new module to `src/index.js` in one of the three tasks.
+
+In these sessions the note had nothing left to fix. A rule the developer states outright survives
+the compaction summary, and Opus drew the general rule from two specific corrections by itself.
+The case reflect was built for, a long session where the pushback is implicit, spread out and
+mixed with other work, is not covered by either script. Opus runs cost about $0.9 each at list
+prices and stray only some of the time, so a comparison with enough runs to show a difference
+would cost on the order of $20. That has not been run. These runs cost $2.66 in all, on the
+Claude Code login of the machine that ran them.

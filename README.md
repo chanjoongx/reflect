@@ -60,23 +60,29 @@ The benchmark is 837 turns from 224 of my own Claude Code sessions, collected in
 |---|---:|---:|---:|---:|
 | 0.1.4 as shipped (git reverts + English phrases) | 0 | 0 | n/a | 0.0% |
 | judge on Claude Haiku 4.5 (August) | 67 | 10 | 87.0% | 47.5% |
-| **0.2 and 0.3: judge on Claude Haiku 5.5** | **76** | **2** | **97.4%** | **53.9%** |
+| 0.2 and 0.3 npm command: Claude Haiku 5.5, structured output | 76 | 2 | 97.4% | 53.9% |
+| **0.4 plugin: Claude Haiku 5.5, schema in the message** | **98** | **2** | **98.0%** | **69.5%** |
+| **0.4 npm command: Claude Haiku 5.5, schema in the message** | **101** | **3** | **97.1%** | **71.6%** |
 
-On the same turns Haiku 5.5 scores 9.3 F0.5 points above Haiku 4.5 (95% interval 2.5 to 18.5, resampled by session). Turning on adaptive thinking did not help (93.6% precision, 51.8% recall), so it stays off.
+The three Haiku 5.5 rows use the same rubric, with thinking off and effort low. They differ in how the request asks for the answer. Up to 0.3 the npm command asked for structured output. In 0.4 both forms put the verdict's JSON Schema at the end of the message and accept a sentence or a code fence around the answer, and the plugin's request also starts with the identity line Claude Code puts before a plugin's system text. F0.5 went from 83.9% to 90.6% with the plugin's request and to 90.7% with the npm command's: 6.7 points (95% interval 3.5 to 10.4, resampled by session) and 6.8 points (3.2 to 10.8). The judge in the 0.3.0 plugin left effort at the model's default and was never measured.
 
-What matters in use is whether a session gets a note at all. Replayed over the benchmark, the default trigger (two pushbacks within six turns) fired 21 times in 17 sessions, and every fire landed on turns the reference labels call pushback. Of the 26 sessions where the reference labels trip the same trigger, it reached 17. With the Haiku 4.5 judge it was 17 good fires of 20, in 15 of the 26 sessions. `npm run bench:sim -- --run h55` repeats the replay without API calls.
+With the 0.2 request, Haiku 5.5 scores 9.3 F0.5 points above Haiku 4.5 on the same turns (95% interval 2.5 to 18.5). Turning on adaptive thinking did not help (93.6% precision, 51.8% recall), so it stays off.
+
+What matters in use is whether a session gets a note at all. Replayed over the benchmark with the 0.4 npm command's labels, the default trigger (two pushbacks within six turns) fired 30 times, and 29 of those fires landed on turns the reference labels call pushback. Of the 26 sessions where the reference labels trip the same trigger, it reached 20. With the plugin's labels it fired 26 times, 25 of them on pushback, and reached 18 sessions. The 0.2 and 0.3 judge made 21 good fires of 21 and reached 17 sessions. The Haiku 4.5 judge made 17 good fires of 20 and reached 15. `npx tsx bench/variants.ts --score h55,v0-mod,v0-text` repeats the replay without API calls, and `npm run bench:sim -- --run h55` repeats it for the 0.2 and 0.3 labels.
 
 The agent's previous turn is what makes this work. In the August runs, hiding it cost the Haiku 4.5 judge 10.3 F1 points (clustered bootstrap interval 1.2 to 19.8; 6.8 once the turns where the judge declined to answer are left out). Showing it the previous turn of a different pair cost 27.6.
 
 I also ran the plugin end to end on 2026-11-16. In a run of the 0.2 plugin, two corrections in a row fired the trigger, Opus 5.5 wrote the note in 10.3 seconds for $0.020, and the agent's next turn did the check the note asked for. The 0.3 mod ran under `claude -p --plugin-dir` with four messages in one process: three Haiku 5.5 judgements took 0.9 to 2.0 seconds each, Opus 5.5 wrote the note in 9.1 seconds for $0.0248, and the note reached the agent with the fourth message and showed up in the transcript.
 
+Whether a note changes what the agent does next is a separate question, and I have no evidence yet that it does. In scripted sessions (`bench/note-effect.mjs`), a Haiku 5.5 agent was corrected twice on code style, the conversation was compacted, and it wrote three more functions. All 15 followed the rules with the plugin and all 15 without it, because Claude Code's compaction summary kept the rules. An Opus 5.5 agent corrected twice on which files to touch generalized from that by itself, without the plugin. Those sessions are short and the pushback is explicit. Long sessions with implicit pushback, which is what reflect is for, have not been tested. [`bench/FINDINGS.md`](bench/FINDINGS.md) §15 has the runs.
+
 What these numbers do not tell you:
 
 - The labels come from a model, and no human has checked them yet. Review sheets for that are in `bench/`.
-- The rubric and the trigger were chosen on this same corpus. There is no held-out set.
-- 21 good fires out of 21 is a small sample: the 95% interval for that rate runs from 85% to 100%.
+- The rubric and the trigger were chosen on this same corpus. For 0.4 I split the sessions in half by a hash of the session id and tried rubric edits on one half only. On the other half (118 sessions, 464 turns, 77 pushback) the plugin's new request still gains 4.0 F0.5 points over the 0.2 and 0.3 request (95% interval 0.8 to 7.7). The npm command's gains 3.2 there, with an interval from -1.4 to 7.6, so on that half the gain is not clear.
+- 29 good fires out of 30 (25 of 26 with the plugin's labels) is a small sample: the 95% interval for that rate runs from 83% to 99% (81% to 99%).
 - It is one developer's corpus, and only 286 of the 837 turns follow an edit to code. The rest is writing and research done in Claude Code.
-- Recall is the weak side. The judge tends to read a correction as a new instruction, so about half of real pushback goes unnoticed. That is the safer way to be wrong for a tool that interrupts a working agent, but it is a real limit.
+- Recall is the weak side. It is about 70% now, so about 30% of real pushback goes unnoticed. Most of what is left are messages that call the delivered work not good enough and ask for it again. Rubric edits aimed at them raised recall to 77% to 81% on the half I tried them on, but precision fell to 88% to 91% and F0.5 ended below the shipped rubric, so I did not ship them. Missing pushback is the safer way to be wrong for a tool that interrupts a working agent, but it is a real limit.
 
 ## Install
 
@@ -96,8 +102,8 @@ Without the plugin system:
 
 ```bash
 npm install -g @chanjoongx/reflect
-reflect init     # prints the hook settings to paste into .claude/settings.local.json
-reflect doctor   # checks node, the key and the wiring
+reflect init --write   # in your project: adds the hooks to .claude/settings.local.json
+reflect doctor         # checks node, the key and the wiring
 ```
 
 The npm command runs as command hooks under `node` 20 or later and calls the Anthropic API with your own key, taken from `ANTHROPIC_API_KEY`, the project's `.env` or an `ant auth login` profile.
@@ -106,7 +112,7 @@ The npm command runs as command hooks under `node` 20 or later and calls the Ant
 
 | call | when | measured |
 |---|---|---|
-| judge, Claude Haiku 5.5 | each message after the agent's first reply | $0.00023 per call on average (4,806 tokens in, 98 out, 1.4 s), over the 837 benchmark turns |
+| judge, Claude Haiku 5.5 | each message after the agent's first reply | $0.00026 per call on average (about 4,600 tokens in, 105 out, 1.3 s), over the 837 benchmark turns with the 0.4 requests |
 | reflection, Claude Opus 5.5 | only when two pushbacks land within six messages | $0.020 and $0.029 in two live runs of 0.2, $0.0248 in one of 0.3, about 10 s each |
 
 A 200-message session with three notes would cost about $0.05 for the judge and under $0.10 for the notes. Three reflections are not much of a sample, and a reflection that reads longer turns costs more. [`docs/cost.md`](docs/cost.md) has the details.
@@ -117,12 +123,13 @@ reflect stops calling models in a session once its calls there have cost $0.50 a
 
 | command | what it does |
 |---|---|
+| `/reflect-status` | In the plugin: what reflect holds for this session. Messages judged, pushbacks by kind, notes, spend against the cap, the note in force and how many more messages it lasts, and why reflect stopped if it did. It reads memory only and calls no model |
 | `/chanjoongx-reflect:brain-reflect` | Has the agent look back at your recent messages and say what it keeps getting wrong, starting from reflect's latest note if there is one. No API call, and it runs nothing |
 | `reflect status` | What reflect has seen in the latest session: turns judged, pushbacks, notes, spend, errors |
 | `reflect manual [--turns N]` | From a terminal: the reflection model reads your last N judged messages (default 6) and writes a note, whether or not the trigger fired |
 | `reflect doctor` | Checks node, credentials, the hook bundle and `.reflect/` |
 | `reflect off`, `reflect on` | Turns the npm command's hooks off or on for this project |
-| `reflect init` | Prints hook settings for use without the plugin |
+| `reflect init` | Prints hook settings for use without the plugin. `--write` merges them into the project's `.claude/settings.local.json` and `--remove` takes them out |
 
 The `reflect` commands come with the npm package, not the plugin, and they work on the npm command's hooks and its `.reflect/` folder. The plugin keeps nothing on disk for them to read. Run them as `npx @chanjoongx/reflect <command>`.
 

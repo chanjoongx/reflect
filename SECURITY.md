@@ -25,11 +25,11 @@ Please do **not** open public GitHub issues for security reports until a fix is 
 
 ### The plugin
 
-The plugin is one mod. `plugin/hooks/hooks.json` is `{ "modules": ["./reflect.ts"] }`, and Claude Code loads `plugin/hooks/reflect.ts` itself. The plugin declares no command hooks, needs no `node`, runs no program, starts no process and bundles no third-party code. The module calls `$.model.complete`, `$.clock.after`, `$.ui.log` and `$.session.usage`, and nothing else in Claude Code. It has no network access, key or account of its own. Its model calls go through Claude Code's own client for the session, so they reach whatever the session uses (the Anthropic API, Amazon Bedrock, Google Vertex AI or a gateway) under the session's sign-in: one judge call (Claude Haiku 5.5) per judged developer message, and one reflection call (Claude Opus 5.5 by default) when the trigger fires.
+The plugin is one mod. `plugin/hooks/hooks.json` is `{ "modules": ["./reflect.ts"] }`, and Claude Code loads `plugin/hooks/reflect.ts` itself. The plugin declares no command hooks, needs no `node`, runs no program, starts no process and bundles no third-party code. The module calls `$.model.complete`, `$.clock.after`, `$.ui.log`, `$.session.usage` and `$.command.register`, and nothing else in Claude Code. `$.command.register` adds the `/reflect-status` command, which reads only what reflect holds in memory and calls no model. It has no network access, key or account of its own. Its model calls go through Claude Code's own client for the session, so they reach whatever the session uses (the Anthropic API, Amazon Bedrock, Google Vertex AI or a gateway) under the session's sign-in: one judge call (Claude Haiku 5.5) per judged developer message, and one reflection call (Claude Opus 5.5 by default) when the trigger fires.
 
 It reads the text of messages the developer sent, main-loop tool names with their file or command and whether they failed, the agent's final reply per turn, and the session's context size. It never reads the transcript, files, Claude's memory or environment variables, and it writes nothing to disk. Its state lives in memory and is dropped when the session ends. Its hooks never block a prompt or a tool call.
 
-`scripts/build-hook.mjs` generates the module, unminified, from `src/mod/reflect.ts` and the `src/` modules it imports. CI fails if the committed file does not match the source, or if the module uses `process`, `Buffer`, `require`, `import()`, `node:` modules, `fetch`, `eval`, a URL, `$.fs`, `$.process`, `$.http` or `$.store`, transcript messages or a fork, or calls an engine function outside those four. Review `src/mod/reflect.ts` before adopting.
+`scripts/build-hook.mjs` generates the module, unminified, from `src/mod/reflect.ts` and the `src/` modules it imports. CI fails if the committed file does not match the source, or if the module uses `process`, `Buffer`, `require`, `import()`, `node:` modules, `fetch`, `eval`, a URL, `$.fs`, `$.process`, `$.http` or `$.store`, transcript messages or a fork, or calls an engine function outside those five. Review `src/mod/reflect.ts` before adopting.
 
 ### The npm command
 
@@ -58,7 +58,7 @@ See [`plugin/PRIVACY.md`](plugin/PRIVACY.md) for full data handling.
 
 In scope for security reports:
 - Any path that exfiltrates user code, prompts, or environment to a third party
-- The plugin's module reaching beyond its four engine calls, reading the transcript, or writing to disk
+- The plugin's module reaching beyond its five engine calls, reading the transcript, or writing to disk
 - API key leakage by the npm command through filesystem or network
 - The npm command's hooks modifying files outside the declared `.reflect/` directory
 - Injection attacks through hook input parsing

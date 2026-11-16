@@ -18,6 +18,7 @@
 // code file and judges and reflects with the same prompts as the npm package.
 
 import type { Register } from "claude-code";
+import { answerAsJson, parseLoose } from "../detect/answer-format.js";
 import { JUDGE_SYSTEM, VERDICT_SCHEMA, buildUserMessage, parseVerdict } from "../detect/judge-prompt.js";
 import { renderPriorTurn } from "../detect/render.js";
 import { isPushback, type JudgeVerdict, type Label, type Pair, type ToolCall } from "../detect/types.js";
@@ -50,6 +51,7 @@ const ALIAS_PRICED_AS: Record<string, string> = {
 };
 
 const SHOWN_HEAD = "reflect sent the agent this note:";
+const STATUS_COMMAND = "reflect-status";
 const SHOWN_AGAIN = "reflect sent the agent its current note again, because the conversation was compacted:";
 
 interface Verdict {
@@ -156,8 +158,22 @@ export const register: Register = (on, options) => {
         $.clock.after(0, fn);
       },
     };
+    try {
+      await $.command.register({
+        name: STATUS_COMMAND,
+        description: "Show what reflect has judged, written and spent in this session",
+        immediate: true,
+      });
+    } catch {
+      // The command is a convenience; judging goes on without it.
+    }
     return next(e);
   });
+
+  // It only reads what is in memory, so it can answer while a turn is running.
+  on("command.run", { command: STATUS_COMMAND }, async () => ({ text: statusText(settings) })).catch(() => ({
+    text: "reflect could not show its status.",
+  }));
 
   on("session.end", async ($, e, next) => {
     session = new Session();
@@ -180,6 +196,10 @@ export const register: Register = (on, options) => {
     if (e.isMeta) return next(e);
     const origin = (e as { origin?: { kind?: string } }).origin?.kind;
     if (origin !== undefined && !DEVELOPER_ORIGINS.has(origin)) return next(e);
+    // A slash command with nothing after it is not the developer answering
+    // the agent, and reflect's own command never is.
+    const command = (e as { command?: { command?: string; args?: string } }).command;
+    if (command && (command.command === STATUS_COMMAND || (command.args ?? "").trim().length < MIN_PROMPT_CHARS)) return next(e);
     const text = stripWrappers(e.text ?? "");
     // A bare `/compact` or `/clear` is not the developer answering the agent:
     // the agent's turn stays open and the next real message is judged against it.
@@ -274,6 +294,34 @@ function recordCall(name: string, args: Record<string, unknown>, errored: boolea
   s.hasAgentTurn = true;
 }
 
+// ─── Status ───────────────────────────────────────────────────────────
+
+/** What `/reflect-status` prints. The agent reads it too, so it stays short. */
+function statusText(settings: Settings): string {
+  const s = session;
+  const byLabel = new Map<string, number>();
+  for (const v of s.verdicts.values()) if (isPushback(v.label)) byLabel.set(v.label, (byLabel.get(v.label) ?? 0) + 1);
+  const pushbacks = [...byLabel.values()].reduce((a, b) => a + b, 0);
+  const detail = pushbacks ? ` (${[...byLabel].map(([label, n]) => `${label} ${n}`).join(", ")})` : "";
+  const lines = [
+    "reflect in this session (kept in memory, gone when the session ends):",
+    `- messages: ${s.prompts.length}, judged ${s.verdicts.size}${s.jobs.length ? `, ${s.jobs.length} waiting` : ""}`,
+    `- pushback: ${pushbacks}${detail}`,
+    `- notes written: ${s.fires.length}`,
+    `- spent: $${s.spentUSD.toFixed(4)} of the $${settings.maxUSD.toFixed(2)} cap`,
+  ];
+  const left = s.active ? s.active.reflection.expires_after_turns - (s.prompts.length - s.active.deliveredAt) : 0;
+  if (s.pending) lines.push("- a note is ready and goes to the agent with its next step");
+  else if (s.active && left > 0) {
+    const adj = s.active.reflection.adjustment;
+    const shown = adj.length > 300 ? `${safeTruncate(adj, 300)}…` : adj;
+    lines.push(`- note in force for ${left} more message${left === 1 ? "" : "s"}: ${shown}`);
+  }
+  else lines.push("- no note in force");
+  if (s.stopped) lines.push(`- stopped: ${s.stopped}`);
+  return lines.join("\n");
+}
+
 // ─── Delivery ─────────────────────────────────────────────────────────
 
 /** Whether a note is waiting to go or still in force. */
@@ -348,21 +396,6 @@ export function resetForTest(): void {
 }
 // @plugin-omit-end
 
-const answerAsJson = (schema: unknown): string =>
-  `Answer with one JSON object and nothing else. It must match this JSON Schema:\n${JSON.stringify(schema)}`;
-
-/** Parse a JSON answer, allowing a sentence or a code fence around the object. */
-function parseLoose<T>(text: string, parse: (t: string) => T): T {
-  try {
-    return parse(text);
-  } catch (first) {
-    const a = text.indexOf("{");
-    const b = text.lastIndexOf("}");
-    if (a >= 0 && b > a) return parse(text.slice(a, b + 1));
-    throw first;
-  }
-}
-
 function costOf(model: string, u: Usage | undefined): number {
   if (!u) return 0;
   return capCostUSD(ALIAS_PRICED_AS[model] ?? model, {
@@ -411,25 +444,36 @@ async function judgeJob(eng: Engine, s: Session, job: Job, settings: Settings): 
   if (!pair.prior || s.stopped) return;
   if (s.spentUSD >= settings.maxUSD) return stop(eng, s, `it reached its spend cap of $${settings.maxUSD.toFixed(2)}.`);
 
-  let verdict: JudgeVerdict;
+  let call: { r: Completion; model: string };
   try {
-    const { r, model } = await complete(
+    call = await complete(
       eng,
       {
         model: s.judgeModel,
         system: [{ text: JUDGE_SYSTEM, cache: true }],
         prompt: `${buildUserMessage(pair, false)}\n\n${answerAsJson(VERDICT_SCHEMA)}`,
         maxTokens: 2000,
+        // The measured judge runs at low effort with thinking off. Left unset,
+        // the engine would use the model's own default effort.
+        effort: "low",
         timeoutMs: 30_000,
       },
       "haiku",
     );
-    s.judgeModel = model;
-    s.spentUSD += costOf(model, r.usage);
-    if (!r.isAnswered) return failed(eng, s, "judge", r);
-    verdict = parseLoose(r.text, parseVerdict);
   } catch (e) {
     return stop(eng, s, `the judge model could not be called (${errorText(e)}).`);
+  }
+  const { r, model } = call;
+  s.judgeModel = model;
+  s.spentUSD += costOf(model, r.usage);
+  if (!r.isAnswered) return failed(eng, s, "judge", r);
+  let verdict: JudgeVerdict;
+  try {
+    verdict = parseLoose(r.text, parseVerdict);
+  } catch (e) {
+    // One unreadable answer skips this message. It does not stop the session.
+    eng.debug(`reflect: the judge's answer could not be read (${errorText(e)}); this message was not judged.`);
+    return;
   }
 
   s.verdicts.set(promptId, { label: verdict.label, confidence: verdict.confidence });

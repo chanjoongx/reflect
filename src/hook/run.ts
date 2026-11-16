@@ -439,6 +439,7 @@ export async function judgeTurn(
       model: cfg.judgeModel,
       thinking: cfg.judgeThinking,
       effort: "low",
+      format: "prompt",
       maxRetries: 2,
       timeoutMs: 30_000,
     });

@@ -8,12 +8,15 @@
 // Keeping it single-sourced is deliberate: evals/FINDINGS.md exists because the
 // detector had five implementations that drifted apart.
 //
-// Request shape verified live against the API (2026-08-22):
+// Two request formats. `schema` (the default, and what bench/label.ts sends)
+// uses structured output:
 //   output_config: { format: { type: "json_schema", schema } }
-// The nested `json_schema:{...}` variant is rejected with a 400, and the
-// shipped "reply with JSON" approach silently returns out-of-enum labels
-// (observed: label "undo_request", confidence 0.92) — which is exactly the
-// failure mode structured output removes.
+// The nested `json_schema:{...}` variant is rejected with a 400 (2026-08-22).
+// `prompt` puts the schema in the message and reads the answer tolerantly, as
+// the plugin must. On the 837-pair bench (2026-11-16) it found 101 pushbacks
+// where structured output found 76, at the same precision, so the npm hook
+// sends it too. An out-of-enum label (the 0.1 judge once answered
+// "undo_request") still fails in parseVerdict and that message goes unjudged.
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { APIConnectionError, APIError, InternalServerError, RateLimitError } from "@anthropic-ai/sdk/core/error";
@@ -21,6 +24,7 @@ import type { JudgeUsage, JudgeVerdict, Pair } from "./types.js";
 import { makeClient, type MessagesClient } from "../api/client.js";
 import { JUDGE_SYSTEM, JUDGE_SYSTEM_BLIND, ParseFailure, VERDICT_SCHEMA, buildUserMessage, parseVerdict } from "./judge-prompt.js";
 export * from "./judge-prompt.js";
+import { answerAsJson, parseLoose } from "./answer-format.js";
 
 import { DEFAULT_JUDGE_MODEL } from "../models.js";
 
@@ -47,6 +51,8 @@ export interface JudgeOptions {
   thinking?: JudgeThinking;
   effort?: "low" | "medium" | "high";
   maxTokens?: number;
+  /** `schema`: structured output (default). `prompt`: the schema in the message, read tolerantly. */
+  format?: "schema" | "prompt";
   timeoutMs?: number;
   /** SDK-level retries on 408/409/429/5xx and connection errors. */
   maxRetries?: number;
@@ -118,6 +124,8 @@ export async function judgePair(pair: Pair, opts: JudgeOptions): Promise<JudgeRe
     }));
 
   const shaped = thinkingParams(model, opts.thinking, opts.effort);
+  const inPrompt = opts.format === "prompt";
+  const user = buildUserMessage(pair, opts.blind === true);
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
     max_tokens: opts.maxTokens ?? 2000,
@@ -128,12 +136,20 @@ export async function judgePair(pair: Pair, opts: JudgeOptions): Promise<JudgeRe
         cache_control: { type: "ephemeral", ttl: "1h" },
       },
     ],
-    messages: [{ role: "user", content: buildUserMessage(pair, opts.blind === true) }],
+    messages: [{ role: "user", content: inPrompt ? `${user}
+
+${answerAsJson(VERDICT_SCHEMA)}` : user }],
     ...(shaped.thinking ? { thinking: shaped.thinking } : {}),
-    output_config: {
-      ...(shaped.output_config ?? {}),
-      format: { type: "json_schema", schema: VERDICT_SCHEMA as unknown as Record<string, unknown> },
-    },
+    ...(inPrompt
+      ? shaped.output_config
+        ? { output_config: shaped.output_config }
+        : {}
+      : {
+          output_config: {
+            ...(shaped.output_config ?? {}),
+            format: { type: "json_schema", schema: VERDICT_SCHEMA as unknown as Record<string, unknown> },
+          },
+        }),
   };
 
   const t0 = Date.now();
@@ -158,7 +174,7 @@ export async function judgePair(pair: Pair, opts: JudgeOptions): Promise<JudgeRe
 
   let verdict: JudgeVerdict;
   try {
-    verdict = parseVerdict(text);
+    verdict = inPrompt ? parseLoose(text, parseVerdict) : parseVerdict(text);
   } catch (pe) {
     throw new ParseFailure(
       `${pe instanceof Error ? pe.message : String(pe)} (stop_reason=${res.stop_reason}, out=${res.usage.output_tokens})`,

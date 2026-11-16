@@ -17,7 +17,9 @@ Haiku 5.5's rate rises to $0.50 / $2.50 for prompts over 100K tokens. A judge pr
 
 ## The judge
 
-The November rerun sent all 837 benchmark turns to Claude Haiku 5.5. A call averaged 4,806 input tokens and 98 output tokens and took 1.4 seconds. Of the input, 3,287 tokens are the system prompt, which is sent with a one-hour cache marker and was read from cache on every call of that run. The other 1,519 are the developer's message and the summary of the agent's previous turn.
+The November reruns sent all 837 benchmark turns to Claude Haiku 5.5. With the 0.4 requests, the plugin's and the npm command's, a call averaged $0.00026: about 4,600 input tokens, of which about 2,840 were read from cache, 105 output tokens, and 1.3 seconds. In 0.4 both forms put the verdict schema at the end of the message as text, which adds about 150 uncached input tokens to each call.
+
+The 0.2 and 0.3 request shows how the cache works. A call averaged 4,806 input tokens and 98 output tokens and took 1.4 seconds. Of the input, 3,287 tokens are the system prompt, which is sent with a one-hour cache marker and was read from cache on every call of that run. The other 1,519 are the developer's message and the summary of the agent's previous turn.
 
 | judge call | arithmetic, per million tokens | cost |
 |---|---|---:|
@@ -25,9 +27,9 @@ The November rerun sent all 837 benchmark turns to Claude Haiku 5.5. A call aver
 | first call in an hour (writes the cache) | 3,287 × $0.20 + 1,519 × $0.10 + 98 × $0.50 | $0.00086 |
 | nothing cached | 4,806 × $0.10 + 98 × $0.50 | $0.00053 |
 
-The benchmark run averaged $0.000234 per call. In a session the cache is written once and then read on every message within the hour, so the usual case dominates.
+That run averaged $0.000234 per call. In a session the cache is written once and then read on every message within the hour, so the usual case dominates.
 
-These figures come from the npm command's request, which carries a one-hour cache marker and passes the verdict schema as a structured-output format. The plugin marks the same system prompt for caching through Claude Code's client, and it appends the schema to the prompt as text, because the engine's completion call has no structured-output option. That adds uncached input to each of its judge calls. The plugin's per-call cost has not been measured on its own.
+The table's figures come from the 0.2 and 0.3 npm request, which carried a one-hour cache marker and passed the verdict schema as a structured-output format. The plugin marks the same system prompt for caching through Claude Code's client, and since 0.3 it has sent the schema as text, because the engine's completion call has no structured-output option. The $0.00026 average for 0.4 comes from the benchmark, which sends both requests straight to the API.
 
 Not every message is judged. With the gate's one hard rule (no agent turn before the message, no call), the August corpus needed 68 judge calls per 100 messages. On turns that follow code edits the gate skips almost nothing (`bench/FINDINGS.md` §6), so for coding sessions expect a judge call on nearly every message: about $0.02 to $0.03 per 100 messages.
 
@@ -51,7 +53,7 @@ Its cost depends mostly on how long the model thinks, which the code does not fi
 
 So one automatic reflection costs at most about $0.20, and the three measured ones cost $0.02 to $0.03. A manual reflection (npm command only) reads more turns (6 by default, up to 12), which raises the input ceiling to about $0.09 for 6 turns and $0.17 for 12.
 
-How often it runs: replaying the default policy over the August sessions with the Haiku 5.5 verdicts gave 21 fires in 837 developer turns (`bench/results/session-sim-h55.md`), about 2.5 per 100 messages. At the measured cost that is about $0.06 per 100 messages; at the ceiling, about $0.50.
+How often it runs: replaying the default policy over the August sessions with the 0.2 and 0.3 judge's verdicts gave 21 fires in 837 developer turns (`bench/results/session-sim-h55.md`), about 2.5 per 100 messages. At the measured cost that is about $0.06 per 100 messages; at the ceiling, about $0.50. The 0.4 judges find more pushback, and the same replay fired 30 times with the npm command's labels and 26 times with the plugin's.
 
 ## The cap
 
@@ -65,7 +67,7 @@ reflect stops calling models in a session once its spend there, priced from `src
 ## Spending less
 
 - Use a cheaper reflection model: set the plugin's reflection model, or `REFLECT_MODEL` for the npm command, to `claude-sonnet-5-5`, which is half Opus 5.5's price per token. Its notes have not been compared with Opus 5.5's.
-- With the npm command, fire less often: `REFLECT_POLICY=k3w8` (3 pushbacks in 8 messages) or `k2w6-med` (ignores low-confidence verdicts). In the replay with Haiku 5.5 verdicts `k3w8` fired 10 times against 21 for `k2w6`, and reached fewer of the sessions that needed a note (56% against 65%). The plugin always uses `k2w6`.
+- With the npm command, fire less often: `REFLECT_POLICY=k3w8` (3 pushbacks in 8 messages) or `k2w6-med` (ignores low-confidence verdicts). In the replay with the 0.2 and 0.3 judge's verdicts `k3w8` fired 10 times against 21 for `k2w6`, and reached fewer of the sessions that needed a note (56% against 65%). The plugin always uses `k2w6`.
 - With the npm command, lower `REFLECT_EFFORT`. Less thinking means fewer output tokens.
 
-The 0.1 cost model, for the Opus 4.7 reflection call the hackathon build made, is kept in [`docs/v0.1/api-cost-economics.md`](v0.1/api-cost-economics.md). It does not apply to 0.2 or 0.3.
+The 0.1 cost model, for the Opus 4.7 reflection call the hackathon build made, is kept in [`docs/v0.1/api-cost-economics.md`](v0.1/api-cost-economics.md). It does not apply to 0.2 or later.

@@ -1,6 +1,6 @@
 {
   "name": "chanjoongx-reflect",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Notices when you keep pushing back on Claude Code, works out why, and tells the agent before its next step. Each of your messages is judged by Claude Haiku 5.5; when two land as pushback within six turns, Claude Opus 5.5 reads them and the agent receives a short note. A mod that calls models through your Claude Code session, so there is no API key to set.",
   "author": {
     "name": "Chanjoong Kim",

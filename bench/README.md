@@ -134,8 +134,30 @@ bench/
   metrics.test.ts   hand-worked anchors — sklearn values where one exists
   inspect.ts    eyeball the extractor before spending on labels
   check-findings.ts  asserts FINDINGS.md still matches results.json
+  variants.ts        judge variants on a dev and a test half of the sessions → results/variants-<split>.md
+  judge-variants.ts  the variants: the shipped rubric in three request shapes, and rubric edits v1 to v3
+  note-effect.mjs    scripted live sessions with and without the plugin
   data/         corpus + labels + review sheets   (gitignored — real prompts)
   results/      report + workbench                 (gitignored — quotes prompts)
+```
+
+`variants.ts` judges the benchmark with a named variant from `judge-variants.ts`, which is a system
+prompt plus a request shape. `api` is the 0.2 and 0.3 npm request (structured output), `text` is the
+0.4 npm request (the schema at the end of the message) and `mod` is the plugin's 0.4 request (the same,
+with the identity line Claude Code puts before a plugin's system text). `v1-text` to `v3-text` are the
+rubric edits tried for 0.4. Verdicts are cached in `data/variant-labels.jsonl`. The script scores
+against the Opus 5 reference, splits the sessions into a dev and a test half by a hash of the session
+id, writes `results/variants-<split>.md` and can write a sheet of misses.
+
+`note-effect.mjs` runs scripted `claude -p` sessions in a small scratch project, with the plugin
+loaded (`reflect`) and without it (`none`), to see whether a note changes what the agent does next.
+
+```bash
+npx tsx bench/variants.ts --run <id> --score h55,<id> --split dev|test|all   # judges what is missing (costs money)
+npx tsx bench/variants.ts --score h55,<id> --split test                       # no API calls
+npx tsx bench/variants.ts --misses <id> --split dev                           # misses sheet in results/, no API calls
+node bench/note-effect.mjs --script style|scope --arms reflect,none --n 5 --out <dir>   # costs money through the Claude Code login
+node bench/note-effect.mjs --score <dir>                                      # rescores saved runs, no calls
 ```
 
 `data/` and `results/` are gitignored. They contain redacted but real developer prompts;

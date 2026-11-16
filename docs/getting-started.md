@@ -107,12 +107,20 @@ npx @chanjoongx/reflect on
 
 ## Without the plugin system
 
+In the project's folder:
+
 ```bash
 npm install -g @chanjoongx/reflect
-reflect init
+reflect init --write
 ```
 
-`reflect init` prints the hook settings to merge into `.claude/settings.local.json`. They are command hooks that run the installed bundle under `node` 20 or later, with an absolute path to it, because hook arguments do not pass through a shell:
+`reflect init --write` adds reflect's hooks to the project's `.claude/settings.local.json`, your personal settings file. It keeps your other settings and hooks, replaces reflect entries left by an earlier install, and copies the old file to `settings.local.json.bak` before changing it. Running it again changes nothing. The file then holds an absolute path on your machine, so keep it out of git; `--write` tells you if git does not ignore it.
+
+Install the package globally first. With `npx`, the path would point into npm's temporary cache, which npm may clean up; `--write` warns when it sees such a path.
+
+`reflect init --remove` takes reflect's entries out of the file and leaves the rest.
+
+To edit the file by hand instead, run `reflect init` with no flag. It prints the hook settings to merge. They are command hooks that run the installed bundle under `node` 20 or later, with an absolute path to it, because hook arguments do not pass through a shell:
 
 ```json
 {

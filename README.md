@@ -78,7 +78,7 @@ Whether a note changes what the agent does next is a separate question, and I ha
 
 What these numbers do not tell you:
 
-- The labels come from a model, and no human has checked them yet. Review sheets for that are in `bench/`.
+- The labels come from a model, and no human has checked them yet. The 78 messages where the reference and the judges disagree are on a blind yes/no sheet that `bench/variants.ts --sheet` writes, and `--adjudicated` rescores everything once it is filled in.
 - The rubric and the trigger were chosen on this same corpus. For 0.4 I split the sessions in half by a hash of the session id and tried rubric edits on one half only. On the other half (118 sessions, 464 turns, 77 pushback) the plugin's new request still gains 4.0 F0.5 points over the 0.2 and 0.3 request (95% interval 0.8 to 7.7). The npm command's gains 3.2 there, with an interval from -1.4 to 7.6, so on that half the gain is not clear.
 - 29 good fires out of 30 (25 of 26 with the plugin's labels) is a small sample: the 95% interval for that rate runs from 83% to 99% (81% to 99%).
 - It is one developer's corpus, and only 286 of the 837 turns follow an edit to code. The rest is writing and research done in Claude Code.

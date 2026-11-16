@@ -149,6 +149,13 @@ rubric edits tried for 0.4. Verdicts are cached in `data/variant-labels.jsonl`. 
 against the Opus 5 reference, splits the sessions into a dev and a test half by a hash of the session
 id, writes `results/variants-<split>.md` and can write a sheet of misses.
 
+The reference is a model, and on the messages where it and the judges disagree it is sometimes
+inconsistent with itself. `--sheet` writes `data/adjudication.md`: every judged pair where the
+reference and the listed runs split on pushback or not, in session order, with no label shown. A
+person writes `y`, `n` or `?` after each. `--adjudicated` then puts those answers in place of the
+reference on the pairs answered and scores every run against the result, with how often the
+reference and each run agreed with the person. On the August corpus the sheet holds 78 messages.
+
 `note-effect.mjs` runs scripted `claude -p` sessions in a small scratch project, with the plugin
 loaded (`reflect`) and without it (`none`), to see whether a note changes what the agent does next.
 
@@ -156,6 +163,8 @@ loaded (`reflect`) and without it (`none`), to see whether a note changes what t
 npx tsx bench/variants.ts --run <id> --score h55,<id> --split dev|test|all   # judges what is missing (costs money)
 npx tsx bench/variants.ts --score h55,<id> --split test                       # no API calls
 npx tsx bench/variants.ts --misses <id> --split dev                           # misses sheet in results/, no API calls
+npx tsx bench/variants.ts --sheet h55,v0-mod,v0-text,v1-text,v2-text,v3-text  # blind yes/no sheet in data/, no API calls
+npx tsx bench/variants.ts --adjudicated --score h55,v0-mod,v0-text           # scores against the answered sheet, no API calls
 node bench/note-effect.mjs --script style|scope --arms reflect,none --n 5 --out <dir>   # costs money through the Claude Code login
 node bench/note-effect.mjs --score <dir>                                      # rescores saved runs, no calls
 ```

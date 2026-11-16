@@ -135,6 +135,40 @@ const evalRows = rows
   .filter((r) => arms.every((m) => m.has(r.pairId)) && (!shuffled || shuffled.size === 0 || shuffled.has(r.pairId)))
   .filter((r) => SPLIT === "all" || splitOf(r.sessionId) === SPLIT);
 
+// ─── Human adjudication ───────────────────────────────────────────────
+//
+// `--sheet` writes bench/data/adjudication.md: every judged pair where the
+// reference and the listed runs do not all agree on pushback or not, with no
+// labels shown. A person writes y, n or ? after each "Pushback?". With
+// `--adjudicated`, those answers replace the reference on the pairs answered
+// and every score below is computed against the result.
+
+const SHEET = join(DATA, "adjudication.md");
+const ADJUDICATED = argv.includes("--adjudicated");
+
+/** The answers on the sheet: pair id to pushback or not. Blank and "?" are left out. */
+function sheetAnswers(): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  if (!existsSync(SHEET)) throw new Error(`${SHEET} is missing; write it with --sheet first`);
+  let id: string | null = null;
+  for (const line of readFileSync(SHEET, "utf8").split(/\r?\n/)) {
+    const head = /^### \d+\. `([^`]+)`/.exec(line);
+    if (head) id = head[1] as string;
+    const ans = /^\*\*Pushback\?\*\*\s*(.*)$/.exec(line);
+    if (ans && id) {
+      const a = (ans[1] ?? "").trim().toLowerCase().replace(/[_`*]/g, "");
+      if (/^(y|yes|예|네|o)$/.test(a)) out.set(id, true);
+      else if (/^(n|no|아니오|아니요|x)$/.test(a)) out.set(id, false);
+      id = null;
+    }
+  }
+  return out;
+}
+
+const human = ADJUDICATED ? sheetAnswers() : new Map<string, boolean>();
+/** Pushback by the reference, or by the person where they answered. */
+const refPush = (pairId: string): boolean => human.get(pairId) ?? isPushback(ref.get(pairId)!.verdict.label);
+
 const variantPath = join(DATA, "variant-labels.jsonl");
 
 function variantCache(v: Variant): Map<string, VariantRow> {
@@ -287,7 +321,7 @@ function sourceOf(id: string): Source {
   };
 }
 
-const truth = evalRows.map((r) => isPushback(ref.get(r.pairId)!.verdict.label));
+const truth = evalRows.map((r) => refPush(r.pairId));
 const predOf = (s: Source) => evalRows.map((r) => {
   const l = s.label(r.pairId);
   return r.gate.pass && l !== null && isPushback(l);
@@ -312,12 +346,13 @@ function replay(s: Source) {
       const l = s.label(r.pairId);
       const sig = r.gate.pass && l !== null && isPushback(l) ? { label: l, confidence: "high" as const } : null;
       const t = ref!.get(r.pairId)!.verdict;
-      const sigRef = r.gate.pass && isPushback(t.label) ? { label: t.label, confidence: t.confidence } : null;
+      const answered = human.has(r.pairId);
+      const sigRef = r.gate.pass && refPush(r.pairId) ? { label: answered && !isPushback(t.label) ? ("correction" as Label) : t.label, confidence: answered ? ("high" as const) : t.confidence } : null;
       const f = acc.observe(r.pairId, sig);
       if (f) {
         fires++;
         fired.add(sid);
-        const hits = f.evidence.filter((id: string) => isPushback(ref!.get(id)!.verdict.label)).length;
+        const hits = f.evidence.filter((id: string) => refPush(id)).length;
         if (hits >= Math.min(policy.k, f.evidence.length)) supported++;
       }
       if (accRef.observe(r.pairId, sigRef)) should.add(sid);
@@ -336,10 +371,17 @@ function score(ids: string[]): void {
   const sessionsInSplit = new Set(evalRows.map((r) => r.sessionId)).size;
   const lines: string[] = [];
   const P = (s = "") => lines.push(s);
-  P(`# Judge variants, split \`${SPLIT}\``);
+  P(`# Judge variants, split \`${SPLIT}\`${ADJUDICATED ? ", adjudicated" : ""}`);
   P();
-  P(`${evalRows.length} pairs from ${sessionsInSplit} sessions, ${truth.filter(Boolean).length} of them pushback by the reference labels. Turns with no agent turn before them are not judged.`);
+  P(`${evalRows.length} pairs from ${sessionsInSplit} sessions, ${truth.filter(Boolean).length} of them pushback by the reference labels${ADJUDICATED ? " with the person's answers in place of the reference where given" : ""}. Turns with no agent turn before them are not judged.`);
   P();
+  if (ADJUDICATED) {
+    const answered = evalRows.filter((r) => human.has(r.pairId));
+    const agree = (pred: (id: string) => boolean) => answered.filter((r) => pred(r.pairId) === human.get(r.pairId)).length;
+    P(`On the ${answered.length} pairs the person answered, the reference agrees with them on ${agree((id) => isPushback(ref!.get(id)!.verdict.label))}.`);
+    for (const s of sources) P(`- ${s.id} agrees with them on ${agree((id) => { const r = evalRows.find((x) => x.pairId === id)!; const l = s.label(id); return r.gate.pass && l !== null && isPushback(l); })}`);
+    P();
+  }
   P(`| variant | pushback found | false alarms | precision | recall | F0.5 | Δ F0.5 vs h55 (95% CI, by session) | unreadable | per call | mean latency | k2w6 fires (supported) | sessions reached |`);
   P(`|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|`);
   const summary: Record<string, unknown> = {};
@@ -356,8 +398,9 @@ function score(ids: string[]): void {
     summary[s.id] = { tp: c.tp, fp: c.fp, fn: c.fn, precision: precision(c), recall: recall(c), f05: fbeta(c, 0.5), deltaF05VsH55: d, unreadable: s.unreadable(), perCallUSD: k.usd / Math.max(1, k.n), meanLatencyMs: k.ms / Math.max(1, k.n), judged: k.n, replay: rp };
   }
   mkdirSync(OUT, { recursive: true });
-  writeFileSync(join(OUT, `variants-${SPLIT}.md`), lines.join("\n") + "\n", "utf8");
-  writeFileSync(join(OUT, `variants-${SPLIT}.json`), JSON.stringify({ split: SPLIT, pairs: evalRows.length, sessions: sessionsInSplit, pushback: truth.filter(Boolean).length, variants: summary }, null, 2), "utf8");
+  const name = `variants-${SPLIT}${ADJUDICATED ? "-adjudicated" : ""}`;
+  writeFileSync(join(OUT, `${name}.md`), lines.join("\n") + "\n", "utf8");
+  writeFileSync(join(OUT, `${name}.json`), JSON.stringify({ split: SPLIT, adjudicated: ADJUDICATED ? human.size : 0, pairs: evalRows.length, sessions: sessionsInSplit, pushback: truth.filter(Boolean).length, variants: summary }, null, 2), "utf8");
   process.stdout.write(lines.join("\n") + "\n");
 }
 
@@ -383,7 +426,55 @@ function misses(id: string): void {
   process.stdout.write(`${path}: ${out.filter((l) => l.startsWith("## ")).length} rows\n`);
 }
 
+/**
+ * The adjudication sheet: judged pairs where the reference and the listed runs
+ * split on pushback or not. No label is shown, so the answers are the person's
+ * own. Answers already written on an earlier sheet are carried over.
+ */
+function sheet(ids: string[]): void {
+  const sources = ids.map(sourceOf);
+  const kept = existsSync(SHEET) ? sheetAnswers() : new Map<string, boolean>();
+  const disputed = evalRows
+    .filter((r) => r.gate.pass)
+    .filter((r) => {
+      const votes = [isPushback(ref!.get(r.pairId)!.verdict.label)];
+      for (const s of sources) {
+        const l = s.label(r.pairId);
+        if (l !== null) votes.push(isPushback(l));
+      }
+      return votes.some(Boolean) && votes.some((v) => !v);
+    })
+    .sort((a, b) => (a.sessionId === b.sessionId ? a.promptIndex - b.promptIndex : a.sessionId.localeCompare(b.sessionId)));
+  const out = [
+    "# Adjudication: was this message pushback?",
+    "",
+    `${disputed.length} messages from your own Claude Code sessions. On each one, the reference labels and at least one judge (${ids.join(", ")}) disagree about whether it pushes back on the agent. No label is shown here.`,
+    "",
+    "For each, read what the agent had just done and said (shown as the judge saw it), then your message, and write after **Pushback?**:",
+    "",
+    "- `y` if you were pushing back on what the agent had just done or proposed: correcting it, rejecting it, or saying it does not work or is not what you wanted",
+    "- `n` if you were giving new work, asking something, or approving",
+    "- `?` if you cannot tell",
+    "",
+    `Then run \`npx tsx bench/variants.ts --adjudicated --score ${["h55", ...ids.filter((x) => x !== "h55")].join(",")}\`. It makes no API calls. Messages are in session order. Running \`--sheet\` again keeps the answers already written.`,
+    "",
+    "---",
+    "",
+  ];
+  disputed.forEach((r, i) => {
+    const prev = kept.get(r.pairId);
+    out.push(`### ${i + 1}. \`${r.pairId}\``, "");
+    out.push("**What the agent did and said just before**", "", "```text", renderPriorTurn(r), "```", "");
+    out.push("**Your message**", "", "```text", r.prompt.slice(0, 2500), "```", "");
+    out.push(`**Pushback?** ${prev === undefined ? "" : prev ? "y" : "n"}`, "", "---", "");
+  });
+  writeFileSync(SHEET, out.join("\n"), "utf8");
+  process.stdout.write(`${SHEET}: ${disputed.length} messages, ${[...kept.keys()].filter((k) => disputed.some((r) => r.pairId === k)).length} already answered\n`);
+}
+
 async function main() {
+  const sheetIds = arg("--sheet", "").split(",").filter(Boolean);
+  if (sheetIds.length) sheet(sheetIds);
   const runIds = arg("--run", "").split(",").filter(Boolean);
   for (const id of runIds) {
     const v = VARIANTS[id];
@@ -394,7 +485,7 @@ async function main() {
   if (scoreIds.length) score([...new Set(scoreIds)]);
   const missIds = arg("--misses", "").split(",").filter(Boolean);
   for (const id of missIds) misses(id);
-  if (!runIds.length && !scoreIds.length && !missIds.length) {
+  if (!sheetIds.length && !runIds.length && !scoreIds.length && !missIds.length) {
     const dev = rows.filter((r) => splitOf(r.sessionId) === "dev");
     process.stdout.write(`${evalRows.length} evaluation pairs in split ${SPLIT}; dev holds ${new Set(dev.map((r) => r.sessionId)).size} sessions. Use --run, --score or --misses.\n`);
   }
